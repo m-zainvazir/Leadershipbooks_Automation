@@ -1,0 +1,195 @@
+<!--
+  ============================================================================
+  Book Coach AI — lesson-page block for the Course360 course section
+  ============================================================================
+
+  WHERE THIS GOES
+  On the Course360 LESSON page that contains the coach iframe — directly above
+  the iframe. Not on the coach page itself.
+
+  WHY NOT ON THE COACH PAGE
+  book-coach.ai/<author> is a separate site loaded in an iframe. It has no GHL
+  login session and no contact context, so {{contact.id}} would never resolve
+  there. This lesson page IS rendered by GHL for the logged-in member, so it is
+  the only place that knows who is watching.
+
+  WHAT IT DOES — two independent jobs
+  1. PHONE ACTIVATION. A button that shows a 6-character code the member texts
+     once, linking their handset to their GHL account.
+  2. WEB SESSION. Silently mints a token and appends it to the coach iframe's
+     URL, so the Worker can tell a paying member from a stranger with the link.
+
+  ---------------------------------------------------------------------------
+  WHY THE MARKUP IS ONE BARE DIV
+
+  GHL's lesson editor sanitises pasted HTML and strips interactive elements. A
+  <button> written here is removed and only its text survives — it renders as
+  plain words that cannot be clicked. So the button, the heading and the output
+  area are all BUILT BY THE SCRIPT instead. The sanitiser never sees a <button>,
+  so it has nothing to strip.
+
+  Job 2 is also deliberately kept independent of job 1, so a failure in one
+  cannot take out the other.
+  ---------------------------------------------------------------------------
+
+  BEFORE IT WORKS
+  - The two merge fields on the div must resolve. If they do not, the block says
+    so in place of the button. It fails loudly, never silently.
+  - Set IFRAME_MATCH if your coach iframe's src does not contain 'book-coach.ai'.
+  - The coach page must forward the token — see coach-page-snippet.html.
+
+  IF THE SCRIPT ITSELF IS STRIPPED
+  If the box renders completely empty, the editor removed the <script> too. In
+  that case move everything from <script> onward into the members area's
+  header / tracking code (the same place coach-page-snippet.html went) and leave
+  only the <div> in the lesson. The script finds the div by id either way.
+
+  RE-CHECK AFTER EDITING THE LESSON. Saving in the editor can re-run the
+  sanitiser.
+  ============================================================================
+-->
+
+<div id="coach-activate"
+     data-contact-id="{{contact.id}}"
+     data-email="{{contact.email}}"
+     style="max-width:34rem;margin:1.5rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:.5rem;font-family:inherit;line-height:1.5"></div>
+
+<script>
+(function () {
+  var WORKER = 'https://coach-router.bookcoachai.workers.dev';
+
+  // Substring identifying the coach iframe on this page.
+  var IFRAME_MATCH = 'book-coach.ai';
+
+  var root = document.getElementById('coach-activate');
+  if (!root) return; // container stripped or not on this page: do nothing
+
+  /* ---- identity -------------------------------------------------------- */
+
+  // GHL leaves the literal placeholder in place when a merge field is not
+  // supported on the page type. Sending that on would produce a confusing 403.
+  function unresolved(v) {
+    return !v || v.indexOf('{{') !== -1 || v.indexOf('}}') !== -1;
+  }
+
+  function identity() {
+    var id = (root.getAttribute('data-contact-id') || '').trim();
+    var em = (root.getAttribute('data-email') || '').trim();
+    if (unresolved(id) || unresolved(em)) return null;
+    return { contactId: id, email: em };
+  }
+
+  function post(path, payload) {
+    return fetch(WORKER + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        return { status: res.status, body: body };
+      });
+    });
+  }
+
+  /* ---- job 2: hand the coach iframe a session token -------------------- */
+  // First, and in its own try/catch, so nothing below can stop it. While
+  // webGateMode is "off" or "warn" the coach still works without a token.
+  try {
+    (function wireIframe() {
+      var who = identity();
+      if (!who) return;
+
+      var frames = document.getElementsByTagName('iframe');
+      var frame = null;
+      for (var i = 0; i < frames.length; i++) {
+        var src = frames[i].getAttribute('src') || '';
+        if (src.indexOf(IFRAME_MATCH) !== -1) { frame = frames[i]; break; }
+      }
+      if (!frame) return;
+
+      post('/api/web/session', who).then(function (r) {
+        if (r.status !== 200 || !r.body.token) return;
+        var src = frame.getAttribute('src') || '';
+        if (src.indexOf('s=') !== -1) return; // already carries one
+        frame.setAttribute('src', src + (src.indexOf('?') === -1 ? '?' : '&') + 's=' + encodeURIComponent(r.body.token));
+      }).catch(function () { /* leave the iframe as it was */ });
+    })();
+  } catch (e) { /* never let this break the lesson */ }
+
+  /* ---- build the UI ---------------------------------------------------- */
+  // Created here rather than written as HTML, because the lesson editor strips
+  // <button> and leaves unclickable text behind.
+
+  function el(tag, style, text) {
+    var n = document.createElement(tag);
+    if (style) n.setAttribute('style', style);
+    if (text) n.textContent = text;
+    return n;
+  }
+
+  root.appendChild(el('h3', 'margin:0 0 .5rem', 'Reach your coach by text or phone'));
+  root.appendChild(el('p', 'margin:0 0 1rem',
+    'Link your phone once, and you can text or call your coach any time — the conversation carries on wherever you left off.'));
+
+  var out = el('div', 'margin-top:1rem');
+  out.setAttribute('aria-live', 'polite');
+
+  var who0 = identity();
+  if (!who0) {
+    // Loud, in place of the button, so this is never mistaken for working.
+    out.innerHTML = '<p style="color:#b00">We could not identify your account on this page '
+      + '(the contact merge fields did not resolve). Please let support know which page you are on.</p>';
+    root.appendChild(out);
+    return;
+  }
+
+  var btn = el('button',
+    'padding:.6rem 1.1rem;font-size:1rem;cursor:pointer;border-radius:.35rem;border:1px solid #333;background:#111;color:#fff',
+    'Get my activation code');
+  btn.type = 'button';
+  root.appendChild(btn);
+  root.appendChild(out);
+
+  function say(html) { out.innerHTML = html; }
+
+  /* ---- job 1: the phone activation code -------------------------------- */
+  btn.addEventListener('click', function () {
+    var who = identity();
+    if (!who) {
+      say('<p style="color:#b00">We could not identify your account on this page.</p>');
+      return;
+    }
+
+    btn.disabled = true;
+    say('<p>Getting your code…</p>');
+
+    post('/api/bind/mint', who).then(function (r) {
+      btn.disabled = false;
+
+      if (r.status === 200 && r.body.token) {
+        var mins = Math.round((r.body.expiresInSeconds || 900) / 60);
+        say(
+          '<p style="margin:0 0 .5rem">Text this code to <strong>' + (r.body.smsTo || '') + '</strong>:</p>' +
+          '<p style="font-size:2rem;letter-spacing:.25em;font-weight:700;margin:.25rem 0">' + r.body.token + '</p>' +
+          '<p style="margin:.5rem 0 0;color:#555">Expires in ' + mins + ' minutes and works once. ' +
+          'Your coach will reply as soon as it arrives.</p>'
+        );
+        return;
+      }
+      if (r.status === 429) {
+        say('<p style="color:#b00">You have requested several codes already. Please wait a little and try again.</p>');
+        return;
+      }
+      if (r.status === 403) {
+        say('<p style="color:#b00">' + (r.body.error || 'We could not verify your subscription.') +
+            ' If you think this is wrong, contact support.</p>');
+        return;
+      }
+      say('<p style="color:#b00">Something went wrong getting your code. Please try again in a moment.</p>');
+    }).catch(function () {
+      btn.disabled = false;
+      say('<p style="color:#b00">We could not reach the activation service. Please try again in a moment.</p>');
+    });
+  });
+})();
+</script>

@@ -1,0 +1,15 @@
+# Local secrets for `wrangler dev` and verify-voiceflow.mjs. NEVER commit.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Wrangler local state — includes a simulated KV store and cached build output.
+.wrangler/
+
+node_modules/
+npm-debug.log*
+
+# THE single source of truth for coach config — contains API keys. Never commit.
+# coaches.example.json is the committed template.
+coaches.json

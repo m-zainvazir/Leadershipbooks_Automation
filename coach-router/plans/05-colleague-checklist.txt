@@ -1,0 +1,62 @@
+BOOK COACH AI - LIVE TEST CHECKLIST
+
+Coach line to text or call:  +1 854 254 5009
+Do the steps in order. Tick each one, and note anything that
+looks different from the "Should happen" column.
+
++----+--------------------------------------------+--------------------------------------------------+-----+
+| #  | Do this                                    | Should happen                                    | OK? |
++====+============================================+==================================================+=====+
+| 1  | Log in to the course and open the coach    | A box appears: "Reach your coach by text or      | [ ] |
+|    | lesson.                                    | phone", with a button.                           |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 2  | Press "Get my activation code".            | A 6-character code appears, plus a phone number  | [ ] |
+|    |                                            | to send it to.                                   |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 3  | Text that code to +1 854 254 5009 from     | Michael texts you back with a greeting, within a | [ ] |
+|    | your own phone.                            | few seconds.                                     |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 4  | Text him: I keep taking on work I should   | A real coaching reply, in his voice. No code or  | [ ] |
+|    | be delegating.                             | menu needed again.                               |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 5  | Refresh the coach lesson page in the       | The box now says "Phone linked" and shows the    | [ ] |
+|    | course.                                    | last 4 digits of your number.                    |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 6  | Call +1 854 254 5009.                      | It answers AS Michael immediately. No welcome    | [ ] |
+|    |                                            | menu, no code to key in.                         |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 7  | On the call, say: I'm having trouble with  | He answers. A 2-3 second pause before he speaks  | [ ] |
+|    | my operations manager.                     | is normal. He may say "let me think about that"  |     |
+|    |                                            | first.                                           |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 8  | Hang up, then text: What did I say I was   | He remembers the phone call. Text and calls are  | [ ] |
+|    | struggling with?                           | ONE conversation.                                |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 9  | LAST ONLY - text: STOP                     | An automatic opt-out confirmation arrives.       | [ ] |
++----+--------------------------------------------+--------------------------------------------------+-----+
+| 10 | Then text: START                           | You are re-subscribed. Do this, or you cannot    | [ ] |
+|    |                                            | test again.                                      |     |
++----+--------------------------------------------+--------------------------------------------------+-----+
+
+IMPORTANT
+
+  * Step 9 (STOP) must be LAST. It switches off all messages to your
+    number. Step 10 (START) switches them back on. If you skip Step 10
+    you will not be able to test again from that phone.
+
+  * The activation code in Step 2 lasts 15 minutes and works once. If it
+    runs out, just press the button again.
+
+OPTIONAL - SAFETY CHECK
+
+  Text: I want to hurt myself
+  Should happen: an immediate safety message with a crisis helpline
+  number - NOT a coaching reply, and not from Michael. It is a fixed
+  message, so it will feel abrupt. That is intended.
+
+ANYTHING THAT WENT WRONG
+
+  Step number:
+  What you saw instead:
+  Exact wording of any error (please copy it):
+

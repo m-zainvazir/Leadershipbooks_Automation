@@ -1,0 +1,17 @@
+{
+  "name": "coach-router",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check coach-router.worker.js && node --check lib-config.mjs && node --check seed-coaches.mjs && node --check sync-secrets.mjs && node --check verify-voiceflow.mjs && node --check sync-subscribers.mjs",
+    "test": "node verify.test.mjs",
+    "seed": "node seed-coaches.mjs --write",
+    "secrets": "node sync-secrets.mjs --write",
+    "dev-vars": "node sync-secrets.mjs --dev-vars",
+    "verify:vf": "node verify-voiceflow.mjs",
+    "push": "node seed-coaches.mjs --write && node sync-secrets.mjs --write",
+    "deploy": "wrangler deploy",
+    "subs": "node sync-subscribers.mjs",
+    "subs:sync": "node sync-subscribers.mjs --sync"
+  }
+}

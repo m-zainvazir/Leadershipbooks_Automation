@@ -1,0 +1,22 @@
+{
+  "shared": {
+    "twilioAccountSid": "",
+    "twilioAuthToken": "",
+    "heygenApiKey": "",
+    "publicTwilioNumber": "",
+    "allowedOrigin": ""
+  },
+
+  "coaches": [
+    {
+      "code": "1042",
+      "name": "Micheal Stickler",
+      "aliases": ["Micheal Stickler", "Michael Stickler", "Mike Stickler", "Stickler"],
+      "projectID": "6a52da46bc446f70628c598c",
+      "versionID": "6a52da46bc446f70628c598d",
+      "vfKey": "",
+      "voiceMode": "inline",
+      "ttsVoice": "Polly.Matthew-Neural"
+    }
+  ]
+}

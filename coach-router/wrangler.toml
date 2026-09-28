@@ -1,0 +1,166 @@
+#==============================================================================
+# wrangler.toml — Leadership Books Coach Router
+#
+# One multi-tenant Worker fronting web, SMS and telephone for every Book Coach AI.
+# Replaces the old per-coach proxy Workers.
+#
+# NOTHING SECRET LIVES IN THIS FILE. Every secret is listed as a comment at the
+# bottom with the exact `wrangler secret put` command that sets it.
+#==============================================================================
+
+name = "coach-router"
+main = "coach-router.worker.js"
+compatibility_date = "2026-08-01"
+
+# nodejs_compat is not required — the Worker uses only WebCrypto and fetch.
+# Leave it off unless you add a dependency that needs it.
+
+#------------------------------------------------------------------------------
+# KV — coach registry (`coach:<CODE>`) and sessions (`sess:<channel>:<phone>`)
+#------------------------------------------------------------------------------
+# Create the namespaces first, then paste the returned IDs here:
+#   npx wrangler kv namespace create COACH_KV
+#   npx wrangler kv namespace create COACH_KV --preview
+[[kv_namespaces]]
+binding = "COACH_KV"
+id = "0effc8687af7400088653c7ceeb0183a"
+preview_id = "1ab54718c04a48c483125b8ae62c79e5"
+
+#------------------------------------------------------------------------------
+# Vars — non-secret configuration. Safe to commit.
+#------------------------------------------------------------------------------
+[vars]
+
+# Comma-separated list of origins allowed to call /api/vf-interact and
+# /api/heygen-token. This must be the origin the coach PAGE is served from —
+# i.e. wherever the standalone HTML is hosted — AND the GHL domain that embeds
+# it in an iframe, if the page is ever loaded directly there.
+# Do NOT use "*" in production.
+# Exact, case-sensitive match against the browser's Origin header (worker
+# line 504). "www." and the bare domain are DIFFERENT origins — list both.
+# No trailing slash: an Origin header never has one.
+# If the chat panel is iframed from another host, add that host too — the
+# iframe is what makes the fetch, so its origin is the one that's sent.
+ALLOWED_ORIGIN = "https://www.book-coach.ai,https://book-coach.ai,https://login.leadershipbookspublishers.com"
+
+# The single public Twilio number, E.164. Used as the SMS sender for
+# "text me the link", and as the callerId fallback when a carrier delivers an
+# unusable From on an inbound call.
+PUBLIC_TWILIO_NUMBER = "+18542545009"
+
+# Fallback TTS voice for inline voice mode and for the pre-routing greeting,
+# before a coach (and its own ttsVoice) is known.
+DEFAULT_TTS_VOICE = "Polly.Matthew-Neural"
+
+# GoHighLevel (Course360) sub-account this Worker reconciles subscribers
+# against. Not a credential — the Private Integration Token is the secret,
+# and it lives in Worker secrets as GHL_API_TOKEN. Read only by the cron
+# reconcile, never on the request path.
+GHL_LOCATION_ID = "tjdqrnOqMAMheHIt6pQD"
+
+# Spoken greeting on /twilio/voice. Keep it short — callers interrupt.
+VOICE_GREETING = "Welcome to the Leadership Books coach line. To reach your coach, say the author's name, or enter your four digit access code on the keypad."
+
+# Optional. Only set this if the Worker is reached through a custom domain or a
+# proxy that rewrites scheme/host — Twilio signs the URL it dialled, so a
+# mismatch here is the #1 cause of 403s on /twilio/*.
+# PUBLIC_BASE_URL = "https://coach-router.YOUR-SUBDOMAIN.workers.dev"
+
+# Optional. A staffed number to warm-transfer a caller in crisis to. If unset,
+# the Worker speaks the 988 Suicide and Crisis Lifeline instead of transferring.
+# CRISIS_TRANSFER_NUMBER = "TODO_+1XXXXXXXXXX"
+
+# Optional overrides for the crisis copy. Defaults are in the Worker; override
+# here if Leadership Books has approved specific wording.
+# CRISIS_SMS_TEXT = ""
+# CRISIS_VOICE_TEXT = ""
+
+# LOCAL TESTING ONLY. Setting this to "true" disables X-Twilio-Signature
+# validation, which makes every /twilio/* endpoint publicly callable by anyone.
+# It is deliberately absent from this production block. Use it only via
+# `wrangler dev --var SKIP_TWILIO_VALIDATION:true`.
+# /health reports twilioValidation: "DISABLED" whenever it is on, so a bypass
+# left switched on cannot hide.
+
+
+#------------------------------------------------------------------------------
+# Observability — persisted logs, readable in the dashboard
+#------------------------------------------------------------------------------
+# Without this, `npx wrangler tail` is the ONLY way to see a log line, and only
+# while the terminal is open. With it, Cloudflare keeps them for a few days and
+# they are browsable and searchable under
+#   Workers & Pages -> coach-router -> Logs
+# which is what makes 'why was that subscriber refused?' answerable after the
+# fact rather than only in the moment.
+#
+# This is where the [entitlement] warn lines and [cors] refusals end up.
+# NOTE: logs are for diagnosis, not alerting. /health is the alarm — it returns
+# 503 on a stale or failed sync, so point an uptime monitor at it.
+[observability]
+enabled = true
+head_sampling_rate = 1
+#------------------------------------------------------------------------------
+# Cron — subscriber entitlement reconcile
+#------------------------------------------------------------------------------
+# Pulls the current subscriber list from GoHighLevel and brings KV into line.
+# Populates only: nothing is denied unless `entitlementMode` in the KV `config`
+# key says so.
+#
+# 15 minutes, not 5, on purpose. The free plan allows 1,000 KV writes a day.
+# A lease is only rewritten once it is more than half spent, so the steady
+# cost is about one write per subscriber per day rather than one per run.
+# Activation lag for a new subscriber is therefore up to 15 minutes.
+[triggers]
+crons = ["*/15 * * * *"]
+#------------------------------------------------------------------------------
+# Environments
+#------------------------------------------------------------------------------
+# Optional staging environment with its own KV namespace and its own Twilio
+# number, so you can exercise the SMS flow without touching production traffic.
+#
+# [env.staging]
+# name = "coach-router-staging"
+# [[env.staging.kv_namespaces]]
+# binding = "COACH_KV"
+# id = ""
+# [env.staging.vars]
+# ALLOWED_ORIGIN = "http://localhost:8788"
+# PUBLIC_TWILIO_NUMBER = "TODO_+1XXXXXXXXXX"
+# DEFAULT_TTS_VOICE = "Polly.Matthew-Neural"
+
+#==============================================================================
+# SECRETS — set with `wrangler secret put`, never written in this file.
+#==============================================================================
+#
+# Twilio (both needed: the auth token validates inbound signatures AND
+# authenticates the outbound "text me the link" REST call):
+#
+#   npx wrangler secret put TWILIO_ACCOUNT_SID
+#   npx wrangler secret put TWILIO_AUTH_TOKEN
+#
+#   NOTE: if GoHighLevel owns the parent Twilio account, these must be the
+#   SUBACCOUNT's SID and auth token — not the parent's. The bot number lives in
+#   that subaccount so GHL/LeadConnector never rewrites its webhooks.
+#
+# HeyGen (one key for all coaches; the per-coach avatar and voice IDs live in
+# the KV registry, not here):
+#
+#   npx wrangler secret put HEYGEN_API_KEY
+#
+# GoHighLevel (Course360) Private Integration Token. Used ONLY by the cron
+# reconcile that syncs subscriber entitlement; never touched on the request
+# path. Scopes needed: contacts.readonly (plus payments/*.readonly if the
+# subscriptions endpoint is used instead of tags).
+#
+#   npx wrangler secret put GHL_API_TOKEN
+#
+# Voiceflow — ONE SECRET PER COACH. The name must exactly match that coach's
+# `keyVar` field in KV. Convention: VF_KEY_<CODE>.
+#
+#   npx wrangler secret put VF_KEY_1042
+#   npx wrangler secret put VF_KEY_1043
+#   ...one per coach...
+#
+# After deploying, `GET /health` lists every coach and whether its keyVar
+# resolved — that is the fastest way to catch a typo'd secret name.
+#==============================================================================

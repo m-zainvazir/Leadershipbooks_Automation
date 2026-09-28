@@ -1,0 +1,41 @@
+# Book Coach AI — coach-router (the Worker) + ghl-shopify subscription (the commercial layer).
+# coach-router/.gitignore adds its own rules (coaches.json, .wrangler/, .dev.vars, node_modules/).
+
+# --- Not part of this repo ----------------------------------------------------
+# Its own git repo, with its own remote.
+/Releaved-terrel/
+# Stale duplicate of coach-router from 2026-09-17. Holds live secrets.
+/coach-router - Copy/
+# Page drafts; nearly every one embeds a Voiceflow API key.
+/AA_LeadershipBooks/
+/ms-coach-router-original
+/*.docx
+
+# --- Secrets — never commit ---------------------------------------------------
+# coaches.json is the single source of truth and holds every credential.
+# coaches.example.json is the committed template and is NOT matched here.
+coaches.json
+# Real values redacted from the public docs (webhook URL, personal emails/phones).
+*.local.md
+*.local.*
+coaches.json.*
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# --- Hand-made backups — git history replaces them ----------------------------
+*.bak
+*.bak-*
+*.bak[0-9]*
+
+# --- Page snapshots still embedding a live Voiceflow key ----------------------
+# Stickler's page still calls Voiceflow directly. Commit it once the page is
+# repointed at the Worker and the key rotated (plans/21 §A).
+/ghl-shopify subscription/ms-v2
+
+# --- Tooling ------------------------------------------------------------------
+node_modules/
+.wrangler/
+.DS_Store
+Thumbs.db

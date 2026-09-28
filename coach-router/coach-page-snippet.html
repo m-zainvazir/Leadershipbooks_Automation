@@ -1,0 +1,87 @@
+<!--
+  ============================================================================
+  Book Coach AI — coach page snippet (book-coach.ai/<author>)
+  ============================================================================
+
+  WHERE THIS GOES
+  On the coach page itself, e.g. https://www.book-coach.ai/michael-stickler.
+  This is the page that is iframed into the Course360 lesson.
+
+  WHAT IT DOES
+  Reads the ?s= session token the lesson page puts on the iframe URL and makes
+  sure every call to the Worker carries it. That is what lets the Worker tell a
+  paying member from a stranger who found the page URL.
+
+  It also removes the token from the visible address bar, so it does not end up
+  copied into a chat or a bookmark.
+
+  HOW TO USE IT
+  Two options.
+
+  (A) If the page's existing chat code calls the Worker with fetch(), add this
+      snippet ABOVE that code and it will attach the token automatically — it
+      wraps fetch and needs no other change. Simplest.
+
+  (B) If you would rather be explicit, read window.COACH_SESSION_TOKEN and put
+      it in the JSON body yourself as `sessionToken`.
+
+  WHILE THE GATE IS OFF OR IN WARN
+  The coach still works with no token, so this can be installed before or after
+  the Worker gate is switched to enforce. Install it first — then enforcing is a
+  config change with nothing else moving.
+  ============================================================================
+-->
+
+<script>
+(function () {
+  var WORKER_HOST = 'coach-router.bookcoachai.workers.dev';
+
+  /* ---- 1. pick up the token the lesson page passed in ------------------ */
+  var token = '';
+  try {
+    token = new URLSearchParams(window.location.search).get('s') || '';
+  } catch (e) { /* very old browser: carry on without a token */ }
+
+  // Keep it available for option (B).
+  window.COACH_SESSION_TOKEN = token;
+
+  /* ---- 2. take it out of the address bar ------------------------------- */
+  // A session token in a visible URL gets copied into chats and bookmarks.
+  // Nothing has read it yet except this script, so dropping it is safe.
+  if (token && window.history && window.history.replaceState) {
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.delete('s');
+      window.history.replaceState({}, document.title, url.pathname + (url.search || '') + url.hash);
+    } catch (e) { /* leave the URL alone */ }
+  }
+
+  if (!token) return; // nothing to attach
+
+  /* ---- 3. attach it to every Worker call ------------------------------- */
+  var realFetch = window.fetch;
+  if (typeof realFetch !== 'function') return;
+
+  window.fetch = function (input, init) {
+    try {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var isWorker = url.indexOf(WORKER_HOST) !== -1;
+      var opts = init || {};
+
+      // Only touch POSTs with a JSON body going to the Worker.
+      if (isWorker && opts.body && typeof opts.body === 'string') {
+        var parsed = JSON.parse(opts.body);
+        if (parsed && typeof parsed === 'object' && !parsed.sessionToken) {
+          parsed.sessionToken = token;
+          opts = Object.assign({}, opts, { body: JSON.stringify(parsed) });
+          return realFetch.call(window, input, opts);
+        }
+      }
+    } catch (e) {
+      // Any surprise (non-JSON body, exotic Request object) falls through to
+      // the original call. Never break the page over this.
+    }
+    return realFetch.apply(window, arguments);
+  };
+})();
+</script>

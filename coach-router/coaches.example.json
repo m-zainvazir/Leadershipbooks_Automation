@@ -1,0 +1,38 @@
+{
+  "shared": {
+    "twilioAccountSid": "",
+    "twilioAuthToken": "",
+    "heygenApiKey": "",
+    "healthToken": "",
+    "publicTwilioNumber": "",
+    "workerUrl": "",
+    "allowedOrigin": "",
+    "ghlApiToken": "",
+    "ghlLocationId": "",
+    "config": {
+      "entitlementMode": "off",
+      "leaseHours": 48,
+      "archiveRetentionDays": 30,
+      "archiveReminderDays": [
+        15,
+        5
+      ],
+      "archiveAutoDelete": true
+    }
+  },
+  "coaches": [
+    {
+      "code": "1042",
+      "name": "",
+      "aliases": [],
+      "projectID": "",
+      "versionID": "TODO_VERSION_ID",
+      "vfKey": "",
+      "voiceMode": "inline",
+      "ttsVoice": "Polly.Matthew-Neural",
+      "ghlTag": "",
+      "ghlProductId": "",
+      "landingPageUrl": ""
+    }
+  ]
+}
