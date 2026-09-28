@@ -26,6 +26,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { loadConfig, HERE } from './lib-config.mjs';
+import { recordVerify } from './lib-registry.mjs';
 import { __test } from './coach-router.worker.js';
 import {
   testEmail, emailProblems, orderPayload, coachProblems, checkContact, checkTrialRecord, formatTable, LIMITS_NOTICE,
@@ -222,4 +223,6 @@ console.log(`\n${formatTable(rows)}\n`);
 console.log(`  ${failed ? `FAILED — ${failed} check(s)` : 'PASSED'}${warned ? `, ${warned} warning(s) (registry values not filled in yet)` : ''}`);
 console.log(`\n  Now check ${email}: the welcome email should name ${coach.displayName || coach.name} and link to their lesson.`);
 console.log(`\n  ${LIMITS_NOTICE}\n`);
+// Feeds the "Tested" column of `npm run author`. Local and gitignored.
+recordVerify(coach.code, { at: new Date().toISOString(), passed: !failed, warnings: warned });
 process.exit(failed ? 1 : 0);

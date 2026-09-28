@@ -3344,5 +3344,135 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   truthy('the table renders every row', V.formatTable([{ status: 'PASS', check: 'a', expected: 'b', actual: 'c' }]).split('\n').length === 2);
 }
 
+/* ---------------------------------------------------------------------------
+ * the author record (lib-author.mjs) — plans/21 §E
+ * ------------------------------------------------------------------------- */
+{
+  const A = await import('./lib-author.mjs');
+
+  console.log('\nauthor - set validation');
+  t('a GID is reduced to its digits', A.parseRecordValue('shopifyProductId', 'gid://shopify/Product/123'), ['123', null]);
+  truthy('a non-numeric variant is refused', A.parseRecordValue('shopifyVariantId', 'abc')[1]);
+  t('the lesson URL loses is_preview and the personal token', A.parseRecordValue('courseLessonUrl', 'https://login.x/courses/products/u?is_preview=true&token=SECRET')[0], 'https://login.x/courses/products/u');
+  truthy('an http:// URL is refused', A.parseRecordValue('authorURL', 'http://x.com')[1]);
+  t('books: Title|url pairs', A.parseRecordValue('books', ['A Book|https://x/1', 'B|https://x/2'])[0], [{ title: 'A Book', url: 'https://x/1' }, { title: 'B', url: 'https://x/2' }]);
+  truthy('a book without a URL is refused', A.parseRecordValue('books', ['No Link'])[1]);
+  truthy('trialDays over 90 is refused (Flow\'s Wait cap)', A.parseRecordValue('trialDays', '91')[1]);
+  truthy('an unknown field is refused, listing the settable ones', /Settable/.test(A.parseRecordValue('vfKey', 'x')[1]));
+
+  console.log('\nauthor - identity');
+  t('slug from the record', A.slugOf({ slug: 'michael-stickler', ghlTag: 'bookcoach-micheal-stickler-active' }), 'michael-stickler');
+  t('slug recovered from the tag when unrecorded', A.slugOf({ ghlTag: 'bookcoach-rick-meyer-active' }), 'rick-meyer');
+  t('initials: first and last', A.initialsOf('Mary Anne Smith'), 'MS');
+
+  const S = { code: '1042', name: 'Micheal Stickler', displayName: 'Michael Stickler', slug: 'michael-stickler', shopifyProductId: '10434147320122', shopifyVariantId: '54042631733562', ghlProductId: '6a9185da778550cdf732a700', landingPageUrl: 'https://www.book-coach.ai/michael-stickler-coach-access', bookTitle: 'Life Without Reservation' };
+  const F = { code: '1043', name: 'Freddy Davis', displayName: 'Freddy Davis', slug: 'freddy-davis', ghlTag: 'bookcoach-freddy-davis-active', shopifyProductId: '10454698754362', ghlProductId: '6ab501e01d7cb94f5e175eb4', bookTitle: 'The Truth Mirage' };
+  {
+    const m = A.foreignMarkers(F, [S, F]);
+    truthy('another author\'s display name is a marker', m.includes('Michael Stickler'));
+    truthy('...and their internal spelling', m.includes('Micheal Stickler'));
+    truthy('...and their product id', m.includes('10434147320122'));
+    truthy('...and their slug (catches /pages/michael-stickler-speakers-bureau)', m.includes('michael-stickler'));
+    falsy('own name is never a marker', m.includes('Freddy Davis'));
+  }
+
+  // An offline world. Every reader returns what a test sets.
+  const world = (o = {}) => ({
+    locationId: 'LOC',
+    fetchText: async (url) => (o.pages && url in o.pages ? { status: 200, text: o.pages[url] } : { status: 404, text: '' }),
+    catalog: async () => new Map(Object.entries(o.catalog || {})),
+    ghl: async (path) => {
+      if (path === '/contacts/search') return { contacts: o.holders || [] };
+      if (/\/price\?/.test(path)) return { prices: o.prices || [] };
+      return o.product || {};
+    },
+    health: async () => ({ coaches: o.live || [] }),
+    kvGet: async () => o.kv || null,
+    lastVerify: () => o.lastVerify || null,
+  });
+  const byCheck = (rows, check) => rows.find((r) => r.check === check);
+
+  console.log('\nauthor - status: coach page');
+  {
+    const page = (cfg) => ({ 'https://www.book-coach.ai/freddy-davis': cfg });
+    const good = 'authorName: "Freddy Davis", showActivation: true, COACH_CODE: "1043",';
+    let rows = await A.authorStatus(F, world({ pages: page(good) }), { all: [S, F] });
+    t('a correct Worker page passes', ['page exists', 'talks through the Worker', 'showActivation: true', 'no other author on the page'].map((c) => byCheck(rows, c).status), ['DONE', 'DONE', 'DONE', 'DONE']);
+    rows = await A.authorStatus(F, world({ pages: page('authorName: "Freddy Davis", VF_API_KEY: "VF.DM.x"') }), { all: [S, F] });
+    truthy('a direct page FAILS and says the key is readable', /key is readable/.test(byCheck(rows, 'talks through the Worker').detail));
+    t('absent showActivation FAILS', byCheck(rows, 'showActivation: true').status, 'FAIL');
+    rows = await A.authorStatus(F, world({ pages: page(`${good} COACH_CODE: "1042"`.replace('"1043"', '"1042"')) }), { all: [S, F] });
+    truthy('another coach\'s COACH_CODE FAILS', /another coach/.test(byCheck(rows, 'talks through the Worker').detail));
+    rows = await A.authorStatus(F, world({ pages: page(`${good}<p>Coached by Michael Stickler</p>`) }), { all: [S, F] });
+    t('another author in VISIBLE copy FAILS', byCheck(rows, 'no other author on the page').status, 'FAIL');
+    rows = await A.authorStatus(F, world({ pages: page(`${good}<script>var x = "authorURL: /pages/michael-stickler-speakers-bureau"</script>`) }), { all: [S, F] });
+    t('...only in a script is a WARN, not a FAIL', [byCheck(rows, 'no other author on the page').status, byCheck(rows, 'no other author in SEO / page data').status], ['DONE', 'WARN']);
+    rows = await A.authorStatus(F, world({}), { all: [S, F] });
+    t('no page yet is TODO, not FAIL', byCheck(rows, 'page exists').status, 'TODO');
+  }
+
+  console.log('\nauthor - status: Shopify, GHL, funnel, registry');
+  {
+    const prod = { id: 10454698754362, title: 'The Truth Mirage [Freddy Davis] + Your Personal AI Coach', variants: [{ id: 54120408187194, available: true, requires_shipping: true, sku: '', grams: 0 }] };
+    let rows = await A.authorStatus(F, world({ catalog: { 10454698754362: prod } }), { all: [S, F] });
+    t('bundle found by id in the public catalogue', byCheck(rows, 'bundle product').status, 'DONE');
+    t('no SKU / weight 0 FAILS (runbook §3)', byCheck(rows, 'SKU and weight').status, 'FAIL');
+    truthy('an unrecorded variant is TODO with the exact set command', /--shopifyVariantId 54120408187194/.test(byCheck(rows, 'variant recorded').fix));
+    rows = await A.authorStatus(F, world({}), { all: [S, F] });
+    truthy('a product missing from the catalogue FAILS', byCheck(rows, 'bundle product').status === 'FAIL');
+
+    const monthly = { _id: 'P1', type: 'recurring', amount: 59, recurring: { interval: 'month' } };
+    rows = await A.authorStatus(F, world({ product: { _id: F.ghlProductId, name: 'BookCoach AI - Freddy Davis - Coach Access', productType: 'SERVICE', availableInStore: false }, prices: [monthly, { ...monthly, _id: 'P2' }] }), { all: [S, F] });
+    truthy('two $59 prices FAIL — the funnel could point at either', byCheck(rows, '$59 monthly price').status === 'FAIL');
+
+    const Fx = { ...F, landingPageUrl: 'https://www.book-coach.ai/freddy-davis-coach-access', ghlPriceId: 'P1' };
+    const funnel = (html) => ({ pages: { [Fx.landingPageUrl]: html }, product: { _id: F.ghlProductId }, prices: [monthly] });
+    rows = await A.authorStatus(Fx, world(funnel(`<form data-product="${S.ghlProductId}">`)), { all: [S, Fx] });
+    t('🚨 a funnel still selling the SOURCE author\'s product FAILS', byCheck(rows, 'sells THIS author\'s product').status, 'FAIL');
+    rows = await A.authorStatus(Fx, world(funnel(`<form data-product="${F.ghlProductId}" data-price="P1">`)), { all: [S, Fx] });
+    t('a repointed funnel passes, price included', [byCheck(rows, 'sells THIS author\'s product').status, byCheck(rows, '...at the $59 price').status], ['DONE', 'DONE']);
+
+    rows = await A.authorStatus(F, world({ live: [{ code: '1043', keyResolved: false, keyVar: 'VF_KEY_1043' }] }), { all: [S, F] });
+    t('pushed but no key FAILS', byCheck(rows, 'Worker holds the key').status, 'FAIL');
+    rows = await A.authorStatus({ ...F, apiKey: 'k', projectID: 'a'.repeat(24), versionID: 'main' }, world({ live: [{ code: '1043', keyResolved: true }], kv: { name: 'Stale' } }), { all: [S, F], deep: true });
+    t('--deep: KV drifting from coaches.json FAILS', byCheck(rows, 'KV matches coaches.json').status, 'FAIL');
+    rows = await A.authorStatus(F, world({ holders: [{ id: 'T1', email: 'me+verify-1043-1@x.com' }] }), { all: [S, F] });
+    t('a leftover verify-author contact FAILS "clean"', byCheck(rows, 'no test contacts left entitled').status, 'FAIL');
+    rows = await A.authorStatus(F, world({ lastVerify: { passed: true, at: '2026-09-28' } }), { all: [S, F] });
+    t('a recorded verify-author pass is DONE', byCheck(rows, 'verify-author').status, 'DONE');
+    t('the grant workflow is MANUAL and says which scope would fix it', [byCheck(rows, 'grant workflow published').status, /workflows\.readonly/.test(byCheck(rows, 'grant workflow published').fix)], ['MANUAL', true]);
+  }
+
+  console.log('\nauthor - summary + one failing reader');
+  {
+    const rows = await A.authorStatus(F, { ...world({}), catalog: async () => { throw new Error('Shopify down'); } }, { all: [S, F] });
+    truthy('a reader that throws becomes a FAIL row, not a crash', rows.some((r) => r.step === 3 && /Shopify down/.test(r.detail)));
+    truthy('...and the other steps still report', rows.some((r) => r.step === 10));
+    const sum = A.stepSummary([{ step: 2, status: 'DONE' }, { step: 2, status: 'WARN' }, { step: 3, status: 'MANUAL' }, { step: 3, status: 'FAIL' }]);
+    t('worst row wins per step', [sum[2], sum[3], sum[4]], ['WARN', 'FAIL', 'TODO']);
+  }
+
+  console.log('\nauthor - generators');
+  {
+    const R = { code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', bookTitle: 'Running on Faith', coachLabel: 'Faith Coach', books: [{ title: 'Running on Faith', url: 'https://x/b' }] };
+    const cfg = A.coachPageConfig(R, { workerUrl: 'https://w' });
+    truthy('showActivation is always true — it cannot be forgotten', cfg.includes('showActivation: true,'));
+    truthy('talks through the Worker with this code', cfg.includes('COACH_CODE: "1044"') && cfg.includes('WORKER_URL: "https://w"'));
+    falsy('carries no Voiceflow key', /VF_API_KEY|VF\.DM/.test(cfg));
+    truthy('the coach label is the page "bookTitle"', cfg.includes('bookTitle: "Faith Coach"'));
+    truthy('books render, and showBooks follows them', cfg.includes('{ title: "Running on Faith", url: "https://x/b" }') && cfg.includes('showBooks: true'));
+    const tricky = A.coachPageConfig({ ...R, displayName: 'Jo "The" Smith' }, { workerUrl: 'https://w' });
+    truthy('quotes in a name are escaped, not a syntax error', tricky.includes('authorName: "Jo \\"The\\" Smith"'));
+    t('gaps listed for what is still empty', A.coachPageGaps({ ...R, books: [] }).length, 3);
+
+    const pairs = A.zipifyReplacements(S, { ...R, landingPageUrl: 'https://www.book-coach.ai/rick-meyer-coach-access', shopifyProductId: '9', shopifyVariantId: '8' });
+    const finds = pairs.map((p) => p.find);
+    truthy('the ™ title comes before the plain title', finds.indexOf('Life Without Reservation™') < finds.indexOf('Life Without Reservation'));
+    truthy('the possessive comes before the bare first name', finds.indexOf("Michael's") < finds.indexOf('Michael'));
+    truthy('both spellings of the source author are replaced', finds.includes('Michael Stickler') && finds.includes('Micheal Stickler'));
+    truthy('product, variant and funnel link are replaced', ['10434147320122', '54042631733562', 'https://www.book-coach.ai/michael-stickler-coach-access'].every((x) => finds.includes(x)));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

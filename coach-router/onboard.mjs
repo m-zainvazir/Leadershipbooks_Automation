@@ -39,9 +39,8 @@
  * Plan: ../ghl-shopify subscription/plans/21-onboarding-automation.md §B
  */
 
-import { readFileSync, writeFileSync, copyFileSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { loadConfig, runtimeConfig, CONFIG_FILE, HERE } from './lib-config.mjs';
+import { loadConfig, runtimeConfig } from './lib-config.mjs';
+import { saveRegistry } from './lib-registry.mjs';
 import {
   buildEntry,
   preflightProblems,
@@ -130,6 +129,7 @@ const aliasesArg = valOf('--aliases');
 const entry = buildEntry({
   code, author, book, slug, trialDays,
   name: valOf('--name'),
+  coachLabel: valOf('--label'),
   aliases: aliasesArg ? aliasesArg.split(',').map((s) => s.trim()).filter(Boolean) : null,
   projectID, versionID, vfKey,
   shopifyProductId: valOf('--shopify-product'),
@@ -227,29 +227,16 @@ console.log(`  GHL product      ${made.ghlProductId}`);
 console.log(`  GHL price        ${made.ghlPriceId}`);
 
 entry.ghlProductId = made.ghlProductId;
+entry.ghlPriceId = made.ghlPriceId;
 
-// Backup, then append. Re-serialised as 2-space JSON; the backup keeps the
-// original byte for byte.
-const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
-const backup = `${CONFIG_FILE}.bak-${stamp}-onboard-${entry.code}`;
-copyFileSync(CONFIG_FILE, backup);
-const doc = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
-doc.coaches.push(entry);
-writeFileSync(CONFIG_FILE, `${JSON.stringify(doc, null, 2)}\n`, 'utf8');
-console.log(`  coaches.json     entry ${entry.code} appended  (backup: ${backup.split(/[\\/]/).pop()})`);
-
-// The existing validation, unchanged, on the file as it now stands.
-// spawnSync, not execFileSync: seed prints its warnings to STDERR, which
-// execFileSync discards on success.
-const seed = spawnSync(process.execPath, ['seed-coaches.mjs'], { cwd: HERE, encoding: 'utf8' });
-if (seed.status === 0) {
-  const warnings = `${seed.stdout}\n${seed.stderr}`.split('\n').filter((l) => l.includes(`"${entry.code}"`) && l.trim().startsWith('!'));
+// Backup, append, validate — and restore the backup if seed refuses.
+try {
+  const { backup, warnings } = saveRegistry((doc) => { doc.coaches.push(entry); }, { label: `onboard-${entry.code}`, code: entry.code });
+  console.log(`  coaches.json     entry ${entry.code} appended  (backup: ${backup})`);
   console.log(`  seed validation  clean${warnings.length ? ` — ${warnings.length} warning(s) for ${entry.code}, expected until the manual steps are done:` : ''}`);
-  for (const w of warnings) console.log(`                 ${w.trim()}`);
-} else {
-  copyFileSync(backup, CONFIG_FILE);
-  console.error(`\n${seed.stderr || ''}`.trim());
-  die(`seed validation FAILED — coaches.json restored from the backup. The GHL product ${made.ghlProductId} and price ${made.ghlPriceId} exist; fix the problem and re-run with --ghl-product ${made.ghlProductId}.`);
+  for (const w of warnings) console.log(`                 ${w}`);
+} catch (err) {
+  die(`${err.message}\n\nThe GHL product ${made.ghlProductId} and price ${made.ghlPriceId} exist; fix the problem and re-run with --ghl-product ${made.ghlProductId}.`);
 }
 
 console.log(`\n${remainingSteps({ entry, slug, label, priceId: made.ghlPriceId })}\n`);

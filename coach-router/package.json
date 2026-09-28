@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check coach-router.worker.js && node --check lib-config.mjs && node --check seed-coaches.mjs && node --check sync-secrets.mjs && node --check verify-voiceflow.mjs && node --check sync-subscribers.mjs && node --check lib-onboard.mjs && node --check onboard.mjs && node --check lib-verify-author.mjs && node --check verify-author.mjs",
+    "check": "node --check coach-router.worker.js && node --check lib-config.mjs && node --check seed-coaches.mjs && node --check sync-secrets.mjs && node --check verify-voiceflow.mjs && node --check sync-subscribers.mjs && node --check lib-onboard.mjs && node --check onboard.mjs && node --check lib-verify-author.mjs && node --check verify-author.mjs && node --check lib-author.mjs && node --check lib-registry.mjs && node --check author.mjs",
     "test": "node verify.test.mjs",
     "seed": "node seed-coaches.mjs --write",
     "secrets": "node sync-secrets.mjs --write",
@@ -14,6 +14,7 @@
     "subs": "node sync-subscribers.mjs",
     "subs:sync": "node sync-subscribers.mjs --sync",
     "onboard": "node onboard.mjs",
-    "verify-author": "node verify-author.mjs"
+    "verify-author": "node verify-author.mjs",
+    "author": "node author.mjs"
   }
 }

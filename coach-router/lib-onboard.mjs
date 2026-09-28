@@ -128,6 +128,10 @@ export function buildEntry(o) {
   const name = o.name || o.author;
   const entry = {
     code: String(o.code),
+    // Recorded, not just used: every later check (npm run author) derives the
+    // coach page, funnel and tag from it.
+    slug: o.slug,
+    ...(o.coachLabel ? { coachLabel: o.coachLabel } : {}),
     name,
     displayName: o.author,
     bookTitle: o.book,
