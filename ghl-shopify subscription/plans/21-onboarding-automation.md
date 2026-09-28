@@ -263,6 +263,88 @@ like every other secret.
 
 ---
 
+## §E — The author record: `npm run author` · built 2026-09-28
+
+**Muhammad, 2026-09-28:** *"I first want the whole author-runbook steps to be automated (as much as
+possible) — it's like creating an ERP/CRM system for them."*
+
+`coaches.json` is the record; every other system is **read back live** and compared against it.
+
+```bash
+npm run author                                     # every author x every runbook step
+npm run author -- status --code 1044 [--deep]      # one author, each gap with the command that fixes it
+npm run author -- set --code 1044 --shopifyProductId 123 --courseLessonUrl https://...
+npm run author -- page --code 1044                 # the coach page CONFIG block, ready to paste
+npm run author -- zipify --code 1044 --from 1042   # the Zipify find-and-replace list, in order
+npm run author -- shopify --code 1044 --sku BC978... --grams 450 [--write]   # §D, needs the token
+```
+
+| Step | What `status` checks, live | Source |
+|---|---|---|
+| 1 Voiceflow | ids + key recorded (`verify:vf` proves they answer) | registry |
+| 2 Coach page | exists; talks through the Worker with **this** code; `showActivation: true`; no other author in **visible** copy (WARN if only in scripts/SEO) | the page |
+| 3 Shopify | in the catalogue by id; title convention; one variant; ships; **SKU + weight set** | public `products.json` — **no token needed** |
+| 4 Course360 | lesson URL recorded and 200. Offer Free/unlisted stays **MANUAL** | the URL |
+| 5 Tag | exists; how many hold it | GHL search |
+| 6 Grant workflow | **MANUAL** — token has no workflows scope (401) | — |
+| 7 $59 product | exists; hidden SERVICE; name convention; **exactly one** $59 monthly price | GHL |
+| 8 Funnel | 200; **sells this author's product and price**; no other author | the page |
+| 9 Zipify | 200; the plain `/cart/<variant>:1` link; no other author; no `{{PLACEHOLDER}}` | the page |
+| 10 Registry | pushed; Worker holds the key; `--deep` diffs KV against `coaches.json` | `/health`, KV |
+| 11 Tested | last `verify-author` result (recorded locally); the $0 order stays MANUAL | local state |
+| 12 Clean | no leftover `+verify-` contact holds the tag | GHL search |
+
+**`set`** is the only write, through `lib-registry.mjs`: backup → write → seed dry run → **restore on
+refusal**. It validates each field at entry — a GID is reduced to digits, a lesson URL loses its
+`?is_preview=true&token=…`. Nobody hand-edits `coaches.json` any more.
+
+**`page`** generates the CONFIG block with `showActivation: true` fixed, `COACH_CODE` set, and no key
+field at all — so the two defects found on live pages (missing activation, inherited `authorURL`)
+cannot be pasted in.
+
+### First run, 2026-09-28 — what it found on the live system
+
+| | Finding | Severity |
+|---|---|---|
+| 1042 / 1044 | Coach page calls Voiceflow **directly, key in page source**; Rick's has no `showActivation` | 🔴 §A |
+| 1042 / 1043 | **Both bundles: no SKU, weight 0** | 🟠 breaks carrier-calculated rates |
+| 1042 | Bundle title and $59 product name predate the convention | cosmetic |
+| 1042 | Zipify page uses Zipify's Product button, not the plain cart link | 🟠 runbook §9c |
+| 1043 | Funnel page's **SEO description names Michael Stickler** (inherited JSON-LD; not visible) | cosmetic |
+| 1043 | Coach page `authorURL` → Stickler's speakers-bureau page (in page data) | 🟠 visible as a link |
+
+⚠ **Public catalogue prices come back in the visitor's currency** (Shopify Markets): from here, PKR.
+`status` does not show price for that reason. Use the Admin API (§D) for a real price check.
+
+### `GET /api/coach-page?slug=…` — §A part 2, built, NOT deployed
+
+Returns only display fields — never project/version ids, GHL ids or a key name (tested) — with
+`showActivation: true` decided by the Worker. `slug`, `coachLabel`, `authorInitials`,
+`authorPhotoURL`, `authorURL`, `books` added to `KV_FIELDS`; `slug` must be unique (seed refuses).
+**Page side not written yet:** it needs the current coach page source, since the repo's `freddy-v2`
+is stale. Until then, `author page` gives the same result by paste.
+
+---
+
+## Where every runbook step stands — 2026-09-28
+
+| Step | Before | Now | Still needs |
+|---|---|---|---|
+| 1 Voiceflow ids | manual, 5 min | `onboard` reads/derives; `status` checks | — |
+| 2 Coach page | clone + 6 fields | clone + **paste one generated block** | §A endpoint deploy + page loader → clone only |
+| 3 Shopify product | manual, 10 min | `author shopify` **built** | 🔑 Shopify Admin token |
+| 4 Course360 | manual, 15 min | `status` checks the URL; `set` cleans it | §4.6 deletes the step |
+| 5 GHL tag | manual | ✅ `onboard` | — |
+| 6 Grant workflow | manual | MANUAL | §4.6 deletes the step; `workflows.readonly` makes it checkable |
+| 7 $59 product | manual | ✅ `onboard` | — |
+| 8 Funnel page | clone + repoint | clone + repoint; **`status` proves the repoint** | no funnel API |
+| 9 Zipify | 45–90 min | **generated replace list + cart link**; `status` verifies | copywriting stays human |
+| 10 Registry | hand-edit JSON | ✅ `onboard` + `author set` | — |
+| 11 Test | curl by hand | ✅ `verify-author`; **`--shopify-order` built** for the real Flow path | 🔑 token, test inbox |
+| 12 Cleanup | by hand | ✅ `verify-author` | — |
+
+---
+
 ## What stays manual, permanently
 
 | Step | Why |

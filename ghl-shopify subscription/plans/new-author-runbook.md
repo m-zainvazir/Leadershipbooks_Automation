@@ -12,6 +12,26 @@ against the generic system.
 
 ---
 
+## ⚡ Tooling — read this first (2026-09-28)
+
+Most of the steps below now have a command. **`npm run author`** (in `coach-router/`) shows every
+author against every step, read live, and `npm run author -- status --code <code>` names the command
+that fixes each gap. Full map: [`21-onboarding-automation.md`](21-onboarding-automation.md) §E.
+
+| Step | Command |
+|---|---|
+| 1, 5, 7, 10 | `npm run onboard -- --code <n> --author "…" --book "…" --slug <slug> --write` |
+| 2 | `npm run author -- page --code <n>` → paste over the CONFIG block of a clone |
+| 3 | `npm run author -- shopify --code <n> --sku BC<ISBN> --grams <g> --write` (needs the Shopify token) |
+| 4, 9 ids | `npm run author -- set --code <n> --courseLessonUrl … --bookLandingUrl … --shopifyVariantId …` |
+| 9 | `npm run author -- zipify --code <n> --from <source code>` |
+| 11, 12 | `npm run verify-author -- --code <n> --email <you> --write` |
+| all | `npm run author -- status --code <n>` |
+
+The sections below remain the reference for **why** each step is shaped the way it is.
+
+---
+
 ## The steps
 
 | Step # | Action | Automated |

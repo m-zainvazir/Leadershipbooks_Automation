@@ -3103,6 +3103,59 @@ async function webUserID(env, session, requested) {
 }
 
 /* =========================================================================
+ * 16b-bis. Coach page config - GET /api/coach-page?slug=<slug>
+ *
+ * plans/21 §A. A coach page used to carry its own CONFIG block, hand-edited
+ * per author — and on 2026-09-22 six of seven pages had forgotten
+ * showActivation, and on 2026-09-28 Freddy's still linked to Stickler's page.
+ * With this, a page asks "who is /<slug>?" and the registry answers, so a new
+ * author's page is a clone with nothing to edit, and showActivation is decided
+ * here rather than remembered there.
+ *
+ * Public by design — it is exactly what the page already shows. So it returns
+ * ONLY display fields: no project/version ids, no GHL ids, and never a key.
+ * ========================================================================= */
+
+const SLUG_SHAPE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const COACH_PAGE_MAX_AGE = 300; // a registry change reaches pages within 5 min
+
+/** The display config for one coach. An allowlist: nothing else can leak. */
+function coachPageConfig(coach) {
+  const name = coach.displayName || coach.name || '';
+  const label = coach.coachLabel || coach.bookTitle || '';
+  const books = (Array.isArray(coach.books) ? coach.books : [])
+    .filter((b) => b && b.title && /^https:\/\//.test(String(b.url || '')))
+    .map((b) => ({ title: String(b.title), url: String(b.url) }));
+  const initials = coach.authorInitials ||
+    name.split(/\s+/).filter(Boolean).map((w) => w[0].toUpperCase()).filter((_, i, a) => i === 0 || i === a.length - 1).join('');
+  return {
+    code: String(coach.code),
+    authorName: name,
+    bookTitle: label,
+    pageTitle: `${name} - ${label}`,
+    authorInitials: initials,
+    authorPhotoURL: /^https:\/\//.test(String(coach.authorPhotoURL || '')) ? coach.authorPhotoURL : '',
+    authorURL: /^https:\/\//.test(String(coach.authorURL || '')) ? coach.authorURL : '',
+    // Every registered coach is sold with a trial, so every page needs the
+    // activation box. Decided here so it can no longer be forgotten there.
+    showActivation: true,
+    showBooks: books.length > 0,
+    showCourses: false,
+    books,
+    courses: [],
+  };
+}
+
+async function handleCoachPage(request, env, cors) {
+  const slug = String(new URL(request.url).searchParams.get('slug') || '').trim().toLowerCase();
+  if (!SLUG_SHAPE.test(slug)) return json({ error: 'slug is required, e.g. ?slug=freddy-davis' }, 400, cors);
+  const reg = await loadRegistry(env);
+  const coach = [...reg.values()].find((c) => String(c.slug || '').toLowerCase() === slug);
+  if (!coach) return json({ error: 'Unknown coach page', slug }, 404, cors);
+  return json(coachPageConfig(coach), 200, { ...cors, 'Cache-Control': `public, max-age=${COACH_PAGE_MAX_AGE}` });
+}
+
+/* =========================================================================
  * 16c. Shopify order intake - POST /shopify/order
  *
  * The piece that makes this system multi-author. A trial used to start because
@@ -3633,6 +3686,14 @@ export default {
         return new Response('Not Found', { status: 404 });
       }
 
+      // --- Coach page config (GET, public display fields only) --------------
+      if (path === '/api/coach-page') {
+        if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405 });
+        const cors = corsHeaders(request, env);
+        if (!cors) return json({ error: 'Origin not allowed', origin: request.headers.get('Origin') || null }, 403);
+        return await handleCoachPage(request, env, cors);
+      }
+
       // --- Web endpoints ---------------------------------------------------
       if (
         path === '/api/vf-interact' ||
@@ -3699,6 +3760,8 @@ export default {
  * surface — nothing routes here.
  */
 export const __test = {
+  coachPageConfig,
+  handleCoachPage,
   applySubscriptionTags,
   ghlAddTags,
   sweepExpiredTrials,

@@ -3475,6 +3475,53 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
 }
 
 /* ---------------------------------------------------------------------------
+ * GET /api/coach-page — plans/21 §A part 2
+ * ------------------------------------------------------------------------- */
+{
+  const worker = (await import('./coach-router.worker.js')).default;
+  const ORIGIN = 'https://www.book-coach.ai';
+  const mk = async (coaches) => {
+    __resetCaches();
+    const kv = fakeKV();
+    for (const c of coaches) await kv.put(`coach:${c.code}`, JSON.stringify(c));
+    return { COACH_KV: kv, ALLOWED_ORIGIN: ORIGIN };
+  };
+  const get = (qs, origin = ORIGIN) => new Request(`https://w.example/api/coach-page${qs}`, { headers: origin ? { Origin: origin } : {} });
+  const R = {
+    code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', slug: 'rick-meyer', bookTitle: 'Running on Faith', coachLabel: 'Faith Coach',
+    projectID: 'a'.repeat(24), versionID: 'b'.repeat(24), keyVar: 'VF_KEY_1044', ghlTag: 'bookcoach-rick-meyer-active', ghlProductId: 'c'.repeat(24),
+    books: [{ title: 'Running on Faith', url: 'https://x/b' }, { title: 'bad', url: 'javascript:alert(1)' }], authorURL: 'http://insecure',
+  };
+
+  console.log('\ncoach page config endpoint');
+  {
+    const env = await mk([R, { code: '1043', name: 'Freddy Davis', slug: 'freddy-davis' }]);
+    const res = await worker.fetch(get('?slug=rick-meyer'), env, {});
+    const body = await res.json();
+    t('200 for a known slug', res.status, 200);
+    t('the right coach, by slug', [body.code, body.authorName, body.bookTitle, body.pageTitle], ['1044', 'Rick Meyer', 'Faith Coach', 'Rick Meyer - Faith Coach']);
+    t('showActivation is decided by the Worker: always true', body.showActivation, true);
+    t('only https book links survive', body.books, [{ title: 'Running on Faith', url: 'https://x/b' }]);
+    t('an http authorURL is dropped, not served', body.authorURL, '');
+    t('initials derived when unset', body.authorInitials, 'RM');
+    falsy('🚨 no project/version ids, no GHL ids, no key name', /aaaa|bbbb|cccc|VF_KEY|bookcoach-|projectID|versionID|ghl/i.test(JSON.stringify(body)));
+    t('CORS for the coach site', res.headers.get('Access-Control-Allow-Origin'), ORIGIN);
+    truthy('cacheable, so a page load is not a KV read', /max-age=300/.test(res.headers.get('Cache-Control') || ''));
+  }
+  {
+    const env = await mk([R]);
+    t('unknown slug -> 404', (await worker.fetch(get('?slug=nobody'), env, {})).status, 404);
+    t('missing slug -> 400', (await worker.fetch(get(''), env, {})).status, 400);
+    t('a slug with punctuation -> 400', (await worker.fetch(get('?slug=../coach:1044'), env, {})).status, 400);
+    t('another origin -> 403', (await worker.fetch(get('?slug=rick-meyer', 'https://evil.example'), env, {})).status, 403);
+    t('POST -> 405', (await worker.fetch(new Request('https://w.example/api/coach-page?slug=rick-meyer', { method: 'POST', headers: { Origin: ORIGIN } }), env, {})).status, 405);
+  }
+  truthy('two coaches sharing a slug are refused by seed', coachProblems([{ code: '1', slug: 'x', index: 0 }, { code: '2', slug: 'x', index: 1 }]).some((p) => /duplicate slug/.test(p)));
+  t('slug and the page fields now reach KV', Object.keys(registryValue({ name: 'A', slug: 's', coachLabel: 'L', books: [{ title: 't', url: 'https://u' }], authorURL: 'https://a' })).sort(),
+    ['authorURL', 'books', 'coachLabel', 'name', 'slug']);
+}
+
+/* ---------------------------------------------------------------------------
  * Shopify Admin (lib-shopify.mjs) — plans/21 §D. Mocked: no token exists yet.
  * ------------------------------------------------------------------------- */
 {

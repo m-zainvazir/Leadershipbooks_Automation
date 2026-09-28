@@ -61,6 +61,15 @@ const KV_FIELDS = [
   // How long this coach's trial runs. Per-coach so a different book can have a
   // different length without a code change. Defaults to 10 where unset.
   'trialDays',
+  // The coach page's display fields, served by GET /api/coach-page so a page is
+  // a clone with nothing to edit (plans/21 §A). Public by design: they are what
+  // the page shows anyway. `slug` is also the lookup key.
+  'slug',
+  'coachLabel',
+  'authorInitials',
+  'authorPhotoURL',
+  'authorURL',
+  'books',
   // true/false overrides config.sharedMemory for this coach only. Absent means
   // "follow the global switch". See plans/10-shared-memory-across-channels.md.
   'sharedMemory',
@@ -371,13 +380,15 @@ export function configProblems(cfg) {
  */
 export function coachProblems(coaches = []) {
   const p = [];
-  const seen = { ghlTag: new Map(), shopifyProductId: new Map(), ghlProductId: new Map() };
+  // `slug` too: GET /api/coach-page finds a coach by it, so two sharing one
+  // would put one author's name on the other's page.
+  const seen = { ghlTag: new Map(), shopifyProductId: new Map(), ghlProductId: new Map(), slug: new Map() };
 
   for (const coach of coaches) {
     const where = coach.code ? `coach "${coach.code}"` : `coaches[${coach.index}]`;
 
     // --- uniqueness: two coaches must never share an identity key ----------
-    for (const field of ['ghlTag', 'shopifyProductId', 'ghlProductId']) {
+    for (const field of ['ghlTag', 'shopifyProductId', 'ghlProductId', 'slug']) {
       const raw = coach[field];
       if (raw === undefined || raw === null || raw === '') continue;
       const key = String(raw).trim().toLowerCase();
