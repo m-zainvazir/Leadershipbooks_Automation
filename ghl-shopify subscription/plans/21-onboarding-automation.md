@@ -125,6 +125,49 @@ editing. Creating a second $59 product by accident is worse than typing a comman
 
 **Effort:** ~3h with tests.
 
+### ✅ Built 2026-09-28 — `coach-router/onboard.mjs` + `lib-onboard.mjs`, 66 tests (614 → 680)
+
+**Not yet run with `--write`** — no author has been onboarded through it. Dry-run verified against
+live GHL and live pages: Freddy (`1043`) is refused five ways; Rick Meyer (`1044`) plans cleanly,
+and the derived project id `6a34712d677246c3541333c2` matches the one [`20`](20-multi-author-generalisation.md) §7a recorded.
+
+```bash
+npm run onboard -- --code 1044 --author "Jane Smith" --book "Her Book" --slug jane-smith            # dry
+npm run onboard -- --code 1044 --author "Jane Smith" --book "Her Book" --slug jane-smith --write    # real
+```
+
+**Where the build differs from the design above, and why:**
+
+| Design said | Built as | Why |
+|---|---|---|
+| `--dry` to preview | **dry by default**, `--write` to act | Same posture as `seed`, `subs`, `verify:vf`. `--dry` is harmless and ignored |
+| Scrape the page for the key | Key from **env `VF_KEY_<CODE>`**, page only as fallback | 🚨 **A Worker page carries no Voiceflow ids at all** — not just no key. Live `/freddy-davis`, checked today, has only `COACH_CODE` + `WORKER_URL`. After §A no page will have them |
+| `projectID` = version minus 1 on the last character | **BigInt** `version − 1` | The last-character rule is wrong whenever the version ends in `0`: it borrows. Tested |
+| "Calls nothing" in a dry run | Dry run makes **GHL reads** | A same-named product, a missing staff contact or a real contact already holding the tag are only knowable by reading. Reads cost nothing |
+| Create the tag | Applied to the **staff contact** (`shared.config.staffTag`), then removed | ✅ Confirmed necessary: `GET /locations/<id>/tags` → `401 not authorized for this scope` |
+
+**Refuses before any write** on: an existing code, a bad slug, a non-numeric code, TwiML punctuation
+in the name, a missing or non-`VF.DM.` key, a bad project/version, any cross-coach duplicate
+(`coachProblems`), **a GHL product with the same name**, no staff contact, and **any real contact
+already holding the new tag** (they would be entitled on push).
+
+**On a failed write** it stops, names everything already created, and changes nothing in
+`coaches.json`. A price failure after the product exists is recovered with
+`--ghl-product <id>`, which adopts the product and reuses a matching $59 monthly price if one exists.
+
+**On success** it backs up `coaches.json` (`.bak-<stamp>-onboard-<code>`), appends the entry with
+`ghlProductId`, runs `seed-coaches.mjs` dry — restoring the backup if it fails — and prints the manual
+steps with the exact values. It warns when `landingPageUrl` is not live yet: the day-7/9/10 emails
+link to it.
+
+⚠ **Two things found while building:**
+
+- **`ghl-shopify subscription/freddy-v2` is stale.** The live page is newer (no `CONNECTION`, no
+  `VF_*` fields). Re-save the live source before cloning from it.
+- **Freddy's live page has `authorURL` pointing at Stickler's speakers-bureau page** — an
+  inheritance bug of exactly the §4.1 kind. The printed checklist now names `authorURL`,
+  `authorInitials`, `authorPhotoURL` and `books[]`, which the runbook's step 2 omitted.
+
 ---
 
 ## §C — Verification and cleanup as commands

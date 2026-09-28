@@ -3085,5 +3085,190 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * onboard (lib-onboard.mjs) — plans/21 §B
+ * ------------------------------------------------------------------------- */
+{
+  const { ghlNames, slugConventions, projectFromVersion, parseCoachPage, defaultAliases, buildEntry, preflightProblems, inspectGhl, applyGhl, remainingSteps } =
+    await import('./lib-onboard.mjs');
+
+  console.log('\nonboard - naming conventions');
+  {
+    // Pinned to what was created BY HAND for Freddy on 2026-09-24, read back
+    // from GHL 2026-09-28. If these drift, a clone stops matching its siblings.
+    const n = ghlNames('Freddy Davis');
+    t('product name matches the live Freddy product', n.product, 'BookCoach AI - Freddy Davis - Coach Access');
+    t('price name matches the live Freddy price', n.price, 'BookCoach AI - Freddy Davis - Coach Access @ 59/month');
+    t('description matches the live Freddy product', n.description, 'Monthly access to the Freddy Davis Book Coach AI by text, phone and web.');
+    const c = slugConventions('freddy-davis');
+    t('tag follows the convention and matches the registry', c.ghlTag, 'bookcoach-freddy-davis-active');
+    t('landing URL matches the registry', c.landingPageUrl, 'https://www.book-coach.ai/freddy-davis-coach-access');
+    truthy('iframe src keeps &amp; (it is pasted into HTML)', c.iframeSrc.includes('?cid={{contact.id}}&amp;em={{contact.email}}'));
+  }
+
+  console.log('\nonboard - projectFromVersion');
+  t('Freddy: version - 1 is his real project id', projectFromVersion('6a3339b6eb283c59b70cfa53'), '6a3339b6eb283c59b70cfa52');
+  t('a trailing 0 BORROWS - the case "decrement the last character" gets wrong', projectFromVersion('69e68f5c26ce7fca93b47e20'), '69e68f5c26ce7fca93b47e1f');
+  t('an alias is not derivable', projectFromVersion('main'), null);
+  t('garbage is not derivable', projectFromVersion('xyz'), null);
+
+  console.log('\nonboard - parseCoachPage');
+  {
+    const proxied = parseCoachPage(`const CONFIG = { authorName: "Freddy Davis", showActivation: true, CONNECTION: "worker", COACH_CODE: "1043", VF_API_KEY: "",  VF_VERSION_ID: "6a3339b6eb283c59b70cfa53", VF_PROJECT_ID: "6a3339b6eb283c59b70cfa52" };`);
+    t('Worker page: version read', proxied.versionID, '6a3339b6eb283c59b70cfa53');
+    t('Worker page: project read', proxied.projectID, '6a3339b6eb283c59b70cfa52');
+    t('Worker page: NO key, by design', proxied.vfKey, '');
+    t('Worker page: coach code read', proxied.coachCode, '1043');
+    t('Worker page: showActivation read', proxied.showActivation, true);
+    const legacy = parseCoachPage(`authorName: 'Rick Meyer', VF_API_KEY: "VF.DM.abc.def", VF_VERSION_ID : "6a34712d677246c3541333c3"`);
+    t('legacy page: key read', legacy.vfKey, 'VF.DM.abc.def');
+    t('legacy page: missing showActivation is null, not false', legacy.showActivation, null);
+    t('legacy page: no CONNECTION', legacy.connection, '');
+    // The live Freddy page, 2026-09-28: GHL also serves CONFIG JSON-escaped.
+    const escaped = parseCoachPage(String.raw`    COACH_CODE: \"1043\",\n    WORKER_URL: \"https://coach-router\"`);
+    t('the JSON-escaped copy GHL serves is read too', escaped.coachCode, '1043');
+    t('a Worker page with no VF fields yields none (ids must come from flags)', [escaped.versionID, escaped.projectID], ['', '']);
+  }
+
+  console.log('\nonboard - entry');
+  {
+    t('aliases: full name, first, last', defaultAliases('Freddy Davis'), ['Freddy Davis', 'Freddy', 'Davis']);
+    t('aliases: both spellings kept, case-duplicates dropped',
+      defaultAliases('Micheal Stickler', 'Michael Stickler'), ['Micheal Stickler', 'Michael Stickler', 'Micheal', 'Stickler', 'Michael']);
+    const e = buildEntry({ code: '1044', author: 'Jane Smith', book: 'Her Book', slug: 'jane-smith', projectID: 'a'.repeat(24), versionID: 'b'.repeat(24), vfKey: 'VF.DM.x' });
+    t('name defaults to the display spelling', [e.name, e.displayName], ['Jane Smith', 'Jane Smith']);
+    t('tag from slug', e.ghlTag, 'bookcoach-jane-smith-active');
+    t('trialDays defaults to 10', e.trialDays, 10);
+    falsy('no shopifyProductId until one is given', 'shopifyProductId' in e);
+    t('a numeric Shopify id is stored as a string', buildEntry({ code: '1', author: 'A B', book: 'x', slug: 'a-b', shopifyProductId: 123 }).shopifyProductId, '123');
+    const split = buildEntry({ code: '1', author: 'Michael X', name: 'Micheal X', book: 'b', slug: 'x' });
+    t('--name keeps the internal spelling separate', [split.name, split.displayName], ['Micheal X', 'Michael X']);
+  }
+
+  console.log('\nonboard - preflightProblems');
+  {
+    const good = { code: '1044', author: 'Jane Smith', book: 'Her Book', slug: 'jane-smith', projectID: 'a'.repeat(24), versionID: 'b'.repeat(24), vfKey: 'VF.DM.k' };
+    const existing = [{ code: '1043', name: 'Freddy Davis', ghlTag: 'bookcoach-freddy-davis-active', shopifyProductId: '10454698754362', index: 0 }];
+    const probs = (o, ex = existing) => preflightProblems({ existing: ex, entry: buildEntry({ ...good, ...o }), slug: o.slug ?? good.slug });
+    t('a complete new author passes', probs({}), []);
+    truthy('an existing code is REFUSED, never edited', probs({ code: '1043' }).some((p) => /already in coaches\.json/.test(p)));
+    truthy('a bad slug is refused', probs({ slug: 'Jane Smith' }).some((p) => /--slug/.test(p)));
+    truthy('a non-numeric code is refused', probs({ code: 'JS1' }).some((p) => /digits/.test(p)));
+    truthy('TwiML punctuation is caught BEFORE the product exists', probs({ author: 'Jane & Smith' }).some((p) => /TwiML/.test(p)));
+    truthy('a missing key is refused, and names the env var', probs({ vfKey: '' }).some((p) => /VF_KEY_1044/.test(p)));
+    truthy('a non-DM key is refused', probs({ vfKey: 'sk-live' }).some((p) => /VF\.DM/.test(p)));
+    truthy('a missing project is refused', probs({ projectID: '' }).some((p) => /projectID/.test(p)));
+    truthy('a Shopify id already used by another coach is refused (cross-grant)',
+      probs({ shopifyProductId: '10454698754362' }).some((p) => /duplicate shopifyProductId/.test(p)));
+    truthy('a slug whose tag another coach holds is refused', probs({ slug: 'freddy-davis' }).some((p) => /duplicate ghlTag/.test(p)));
+    t('problems in OTHER coaches are not blamed on this one',
+      probs({}, [{ code: '9', name: 'Old', trialDays: 500, index: 0 }]), []);
+  }
+
+  // A scripted GHL. Every call is recorded so the ORDER of writes can be asserted.
+  const fakeGhl = ({ products = [], staff = [{ id: 'STAFF' }], holders = [], prices = [], failOn = null } = {}) => {
+    const calls = [];
+    const fn = async (path, { method = 'GET', body = null } = {}) => {
+      calls.push({ method, path: path.split('?')[0], body });
+      const key = `${method} ${path.split('?')[0]}`;
+      if (failOn && key.startsWith(failOn)) throw new Error(`GHL 500 on ${key}`);
+      if (key === 'GET /products/') return { products };
+      if (key === 'POST /contacts/search') return { contacts: body.filters[0].value[0] === 'bookcoach-staff-all' ? staff : holders };
+      if (method === 'GET' && /\/price$/.test(key)) return { prices };
+      if (method === 'GET' && key.startsWith('GET /products/')) return products.find((p) => key.endsWith(p._id)) || {};
+      if (key === 'POST /products/') return { _id: 'NEWPRODUCT' };
+      if (method === 'POST' && /\/price$/.test(key)) return { _id: 'NEWPRICE' };
+      return {};
+    };
+    return { fn, calls, writes: () => calls.filter((c) => c.method !== 'GET' && c.path !== '/contacts/search') };
+  };
+  const entry = buildEntry({ code: '1044', author: 'Jane Smith', book: 'Her Book', slug: 'jane-smith', projectID: 'a'.repeat(24), versionID: 'b'.repeat(24), vfKey: 'VF.DM.k' });
+  const inspect = (g, o = {}) => inspectGhl({ ghl: g.fn, locationId: 'LOC', entry, staffTag: 'bookcoach-staff-all', ...o });
+  const P59 = { _id: 'P59', type: 'recurring', amount: 59, currency: 'USD', recurring: { interval: 'month', intervalCount: 1 } };
+
+  console.log('\nonboard - inspectGhl (reads only)');
+  {
+    const g = fakeGhl();
+    const r = await inspect(g);
+    t('a clean location has no problems', r.problems, []);
+    t('the staff contact is found', r.staffContactId, 'STAFF');
+    t('inspection writes NOTHING', g.writes(), []);
+  }
+  {
+    const r = await inspect(fakeGhl({ products: [{ _id: 'OLD', name: 'bookcoach ai - jane smith - coach access' }] }));
+    truthy('a same-named product is refused (case-insensitive)', r.problems.some((p) => /already has a product/.test(p)));
+    truthy('...and the refusal names the recovery flag', r.problems.some((p) => /--ghl-product OLD/.test(p)));
+  }
+  {
+    const r = await inspect(fakeGhl({ products: [{ _id: 'OLD', name: 'BookCoach AI - Jane Smith - Coach Access' }], prices: [P59] }), { adoptProductId: 'OLD' });
+    t('--ghl-product adopts the product', [r.problems, r.product._id], [[], 'OLD']);
+    t('...and reuses its existing $59 monthly price', r.price._id, 'P59');
+  }
+  {
+    const r = await inspect(fakeGhl({ products: [{ _id: 'OLD', name: 'x' }], prices: [{ _id: 'P1', type: 'one_time', amount: 59, currency: 'USD' }] }), { adoptProductId: 'OLD' });
+    t('a one-time price is NOT mistaken for the coach price', r.price, null);
+  }
+  {
+    const r = await inspect(fakeGhl({ staff: [] }));
+    truthy('no staff contact is refused', r.problems.some((p) => /staff tag/.test(p)));
+    const r2 = await inspect(fakeGhl(), { staffTag: '' });
+    truthy('no staffTag configured is refused', r2.problems.some((p) => /staffTag is empty/.test(p)));
+  }
+  {
+    const r = await inspect(fakeGhl({ holders: [{ id: 'REALPERSON' }] }));
+    truthy('a real contact already holding the tag is refused (they would be granted on push)',
+      r.problems.some((p) => /REALPERSON/.test(p)));
+    const r2 = await inspect(fakeGhl({ holders: [{ id: 'STAFF' }] }));
+    t('the staff contact holding it (an interrupted run) is only a note', r2.problems, []);
+    truthy('...and says it will be removed', r2.notes.some((n) => /will be removed/.test(n)));
+  }
+
+  console.log('\nonboard - applyGhl (the only writes)');
+  {
+    const g = fakeGhl();
+    const r = await applyGhl({ ghl: g.fn, locationId: 'LOC', entry, inspection: await inspect(g) });
+    t('returns the new ids', [r.ghlProductId, r.ghlPriceId, r.tag], ['NEWPRODUCT', 'NEWPRICE', 'bookcoach-jane-smith-active']);
+    t('order: tag on, tag off, product, price',
+      g.writes().map((c) => `${c.method} ${c.path}`),
+      ['POST /contacts/STAFF/tags', 'DELETE /contacts/STAFF/tags', 'POST /products/', 'POST /products/NEWPRODUCT/price']);
+    const product = g.writes()[2].body;
+    t('product is a hidden SERVICE', [product.productType, product.availableInStore], ['SERVICE', false]);
+    const price = g.writes()[3].body;
+    t('price is $59 USD recurring monthly',
+      [price.type, price.amount, price.currency, price.recurring], ['recurring', 59, 'USD', { interval: 'month', intervalCount: 1 }]);
+    t('the tag is REMOVED from the staff contact (else it would be granted this coach)', g.writes()[1].body, { tags: ['bookcoach-jane-smith-active'] });
+  }
+  {
+    const g = fakeGhl({ failOn: 'POST /products/NEWPRODUCT/price' });
+    let err = null;
+    try { await applyGhl({ ghl: g.fn, locationId: 'LOC', entry, inspection: await inspect(g) }); } catch (e) { err = e; }
+    truthy('a price failure throws', err);
+    t('...naming what already exists', err && err.created, { tag: 'bookcoach-jane-smith-active', productId: 'NEWPRODUCT' });
+    truthy('...and the recovery flag', err && /--ghl-product NEWPRODUCT/.test(err.message));
+  }
+  {
+    const g = fakeGhl({ failOn: 'DELETE /contacts' });
+    let err = null;
+    try { await applyGhl({ ghl: g.fn, locationId: 'LOC', entry, inspection: await inspect(g) }); } catch (e) { err = e; }
+    t('a failed tag removal stops BEFORE the product, and says the tag is still on staff',
+      [err && err.created, g.writes().some((c) => c.path === '/products/')], [{ tagAppliedTo: 'STAFF' }, false]);
+  }
+  {
+    const g = fakeGhl({ products: [{ _id: 'OLD', name: 'x' }], prices: [P59] });
+    const r = await applyGhl({ ghl: g.fn, locationId: 'LOC', entry, inspection: await inspect(g, { adoptProductId: 'OLD' }) });
+    t('adopting product and price creates neither',
+      [r.ghlProductId, r.ghlPriceId, g.writes().filter((c) => c.path.startsWith('/products')).length], ['OLD', 'P59', 0]);
+  }
+
+  console.log('\nonboard - remainingSteps');
+  {
+    const s = remainingSteps({ entry: { ...entry, ghlProductId: 'NEWPRODUCT' }, slug: 'jane-smith', label: 'Life Coach', priceId: 'NEWPRICE' });
+    truthy('names showActivation: true (the most-missed step)', s.includes('showActivation: true'));
+    truthy('gives the funnel both ids', s.includes('product NEWPRODUCT, price NEWPRICE'));
+    truthy('says the $0 order is still required', /\$0 order/.test(s));
+    falsy('never prints the Voiceflow key', s.includes('VF.DM.k'));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
