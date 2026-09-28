@@ -251,13 +251,25 @@ Creating a product is a single Admin API call. Creating a $0 draft order for tes
 Neither is hard. **There is no Shopify credential anywhere in this project** — that is the only
 reason both are manual.
 
-### 🔑 Needed from M
+### 🔑 Needed from M — corrected 2026-09-28
 
-A **Shopify Admin API access token** with `write_products` and `write_draft_orders`.
-Settings → Apps and sales channels → Develop apps → create an app → Admin API scopes → install.
+~~A Shopify Admin API access token.~~ **Shopify no longer issues them.** Admin-created custom apps
+were retired; there is no token to copy anywhere. The replacement, verified against shopify.dev:
 
-Store it as `shopifyAdminToken` in `coaches.json` `shared` (gitignored) and it syncs to the Worker
-like every other secret.
+1. Shopify admin → Settings → Apps → **Develop apps → Create app → "Create app manually"**
+   (not the `npm init @shopify/app` option — that scaffolds a hosted app we do not need)
+2. Scopes: `write_products`, `write_publications`, `write_draft_orders`, `write_orders`
+3. Release the version, **install it on the store**
+4. Settings of the app → copy **Client ID** and **Client secret**
+
+The tools trade those for a **24-hour token on every run** (the *client credentials grant*), so
+nothing long-lived is stored. It only works when the app and the store are in the **same Shopify
+organization** — `shop_not_permitted` means they are not; creating the app from inside the store's
+own admin avoids it.
+
+Stored in `coaches.json` `shared` as `shopifyShop` (`xxx.myshopify.com`), `shopifyClientId`,
+`shopifyClientSecret`. **Not** synced to the Worker — only the local tools need them, and
+`assertNoSecrets` refuses them on the KV path.
 
 **Effort once the token exists:** ~2h for both.
 
@@ -316,7 +328,31 @@ cannot be pasted in.
 ⚠ **Public catalogue prices come back in the visitor's currency** (Shopify Markets): from here, PKR.
 `status` does not show price for that reason. Use the Admin API (§D) for a real price check.
 
-### `GET /api/coach-page?slug=…` — §A part 2, built, NOT deployed
+### ✅ Deployed 2026-09-28 — Worker `631e9766-8673-492b-bd95-07a7e3267087`
+
+Rollback: `npx wrangler rollback 119545c9-cc52-4b82-b272-0fb832968ee7` (the 09-25 shared-memory
+version). Pushed after deploy: `/health` ok, `problems: []`, 1042/1043/1044 all `keyResolved`, sync
+`lastOk`. `/api/coach-page` answers all three slugs, 404 for an unknown one, 403 for another origin.
+**1044 (Rick) is now in KV** — inert: no Shopify product, no tag holder.
+
+Photos, initials, author links and book buttons for all three copied from their live pages into the
+registry — tracking parameters stripped, and **Freddy's `authorURL` deliberately left empty** (his
+live one is Stickler's page).
+
+### The page template — `coach-router/pages/coach-page.html`
+
+Built from the **live** `/freddy-davis` source (extracted from the rendered page; `freddy-v2` in the
+repo is now refreshed from it too). The CONFIG block is replaced by a loader; the page's other two
+scripts are `type="text/coach-deferred"` and run **unchanged** once CONFIG is filled. Nothing in the
+file is per-author: clone it, publish at `/<slug>`, done.
+
+**Smoke-tested in jsdom against the live endpoint:** `/freddy-davis` and `/rick-meyer` render the
+right name, label, photo and book buttons, keep the activation box, and boot the chat with the
+right `code` (1043 / 1044). An unknown slug shows *"This coach is not available right now"* instead
+of a blank page. **Not yet on any live page** — that is M's paste. `author status` recognises a
+loader page and stops checking its (now absent) CONFIG.
+
+### `GET /api/coach-page?slug=…` — §A part 2
 
 Returns only display fields — never project/version ids, GHL ids or a key name (tested) — with
 `showActivation: true` decided by the Worker. `slug`, `coachLabel`, `authorInitials`,

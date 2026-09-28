@@ -3409,6 +3409,21 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     t('...only in a script is a WARN, not a FAIL', [byCheck(rows, 'no other author on the page').status, byCheck(rows, 'no other author in SEO / page data').status], ['DONE', 'WARN']);
     rows = await A.authorStatus(F, world({}), { all: [S, F] });
     t('no page yet is TODO, not FAIL', byCheck(rows, 'page exists').status, 'TODO');
+    rows = await A.authorStatus(F, world({ pages: page(`<script>fetch(COACH_WORKER_URL + '/api/coach-page?slug=' + slug)</script>`) }), { all: [S, F] });
+    t('a loader page is DONE with no COACH_CODE on it', byCheck(rows, 'loads its config from the registry').status, 'DONE');
+    falsy('...and is not mistaken for a direct page', rows.some((r) => r.check === 'talks through the Worker'));
+  }
+
+  console.log('\nauthor - the coach page template');
+  {
+    const { readFileSync } = await import('node:fs');
+    const tpl = readFileSync(new URL('./pages/coach-page.html', import.meta.url), 'utf8');
+    falsy('carries no Voiceflow key', /VF\.DM\./.test(tpl));
+    falsy('carries no author: nothing to edit per page', /Freddy|Stickler|Rick Meyer|COACH_CODE: "\d/.test(tpl));
+    t('exactly two page scripts are deferred to the loader', (tpl.match(/<script type="text\/coach-deferred">/g) || []).length, 2);
+    truthy('the loader asks /api/coach-page', tpl.includes("/api/coach-page?slug="));
+    truthy('the slug override ships empty', tpl.includes('var COACH_SLUG_OVERRIDE = "";'));
+    t('no plain <script> runs before the loader and reads CONFIG', tpl.split('<script>').length - 1, 1);
   }
 
   console.log('\nauthor - status: Shopify, GHL, funnel, registry');
@@ -3551,6 +3566,25 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     return { gql, calls, ops: () => calls.map((c) => c.op) };
   };
   const opts = { coach: R, price: '29.95', sku: 'BC9781951648213', grams: '450' };
+
+  console.log('\nshopify - client credentials (no token is ever stored)');
+  {
+    t('a complete config has nothing missing', SH.shopifyConfig({ shopifyShop: 'https://get-published-pro.myshopify.com/', shopifyClientId: 'id', shopifyClientSecret: 's' }).missing, []);
+    t('...and the domain is normalised', SH.shopifyConfig({ shopifyShop: 'https://get-published-pro.myshopify.com/', shopifyClientId: 'id', shopifyClientSecret: 's' }).shop, 'get-published-pro.myshopify.com');
+    t('the storefront domain is refused — it must be *.myshopify.com', SH.shopifyConfig({ shopifyShop: 'leadershipbooks.com', shopifyClientId: 'i', shopifyClientSecret: 's' }).missing.length, 1);
+    const seen = [];
+    const fx = (reply, status = 200) => async (url, opts) => { seen.push({ url, opts }); return { ok: status === 200, status, json: async () => reply }; };
+    const tok = await SH.shopifyAccessToken({ shop: 's.myshopify.com', clientId: 'CID', clientSecret: 'SEC', fetchImpl: fx({ access_token: 'T', scope: 'write_products', expires_in: 86399 }) });
+    t('exchanges id + secret for a token', tok, { token: 'T', scope: 'write_products' });
+    t('...at the store\'s oauth endpoint', seen[0].url, 'https://s.myshopify.com/admin/oauth/access_token');
+    truthy('...as a client_credentials grant', /grant_type=client_credentials/.test(seen[0].opts.body) && /client_id=CID/.test(seen[0].opts.body));
+    let err = null;
+    try { await SH.shopifyAccessToken({ shop: 's.myshopify.com', clientId: 'a', clientSecret: 'b', fetchImpl: fx({ error: 'shop_not_permitted' }, 400) }); } catch (e) { err = e; }
+    truthy('shop_not_permitted explains the organization rule', err && /organization/.test(err.message));
+    const conn = await SH.connectShopify({ shopifyShop: 's.myshopify.com', shopifyClientId: 'a', shopifyClientSecret: 'b' }, { fetchImpl: fx({ access_token: 'T', scope: 'write_products,write_orders' }) });
+    t('missing scopes are named, not discovered mid-run', conn.lacking, ['write_publications', 'write_draft_orders']);
+    truthy('a client secret can never reach KV', (() => { try { assertNoSecrets({ shopifyClientSecret: 'x' }); return false; } catch { return true; } })());
+  }
 
   console.log('\nshopify - bundle');
   t('title follows the convention', SH.bundleTitle(R), 'Running on Faith [Rick Meyer] + Your Personal AI Coach');

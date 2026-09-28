@@ -6,35 +6,92 @@
 
 <script>
 /* =========================================================================
-   CONFIG — edit these per author/coach before deploying
+   COACH PAGE LOADER — there is NOTHING to edit here per author.
+
+   This page asks the Worker "who is /<this page's slug>?" and the registry
+   (coaches.json) answers with the name, book, photo, links and coach code.
+   To add an author: clone this page, publish it at https://www.book-coach.ai/<slug>,
+   and make sure coaches.json has that slug (npm run onboard does). That is all.
+
+   Generated from the live /freddy-davis page, 2026-09-28 — plans/21 §A.
+   The two scripts below are marked type="text/coach-deferred" so the browser
+   does not run them on load; this loader runs them, unchanged, once CONFIG is
+   filled in. They were written for a static CONFIG and still see one.
    ========================================================================= */
-   const CONFIG = {
-    authorName: "Freddy Davis",
-    bookTitle: "Worldview Coach",
-    authorPhotoURL: "https://assets.cdn.filesafe.space/tjdqrnOqMAMheHIt6pQD/media/6a7abd8b9994d35aa0b901a9.png", 
-    authorInitials: "FD",
-    pageTitle: "Freddy Davis - Worldview Coach",
-    
+var COACH_WORKER_URL = "https://coach-router.bookcoachai.workers.dev";
 
-    authorURL: "https://leadershipbooks.com/pages/michael-stickler-speakers-bureau",
+// Leave empty: the slug is the last part of this page's URL (/freddy-davis).
+// Set it only if this page is published somewhere its slug is not.
+var COACH_SLUG_OVERRIDE = "";
 
-    showActivation: true,
-    showBooks: true,
-    showCourses: false,
+const CONFIG = {
+  authorName: "", bookTitle: "", authorPhotoURL: "", authorInitials: "", pageTitle: "",
+  authorURL: "", showActivation: false, showBooks: false, showCourses: false,
+  books: [], courses: [],
+  COACH_CODE: "",
+  WORKER_URL: COACH_WORKER_URL
+};
 
-books: [
-  { title: "The Truth Mirage", url: "https://leadershipbooks.com/products/the-truth-mirage?variant=46045837033786&_pos=1&_sid=a8862e450&_ss=r" },
-],
-courses: [
-  { title: "Test", url: "https://www.test1122223.com" },
-],
-    // This page talks to the coach through the Cloudflare Worker. The Voiceflow
-    // key lives in the Worker as a secret and is never sent to the browser, and
-    // the Worker - not this page - decides whose conversation it is, from a
-    // verified session. COACH_CODE is this coach's code in coaches.json.
-    COACH_CODE: "1043",
-    WORKER_URL: "https://coach-router.bookcoachai.workers.dev"
-  };
+(function coachLoader(){
+  // GHL can render a custom-code element more than once; run exactly once.
+  if (window.__coachLoaderRan) return;
+  window.__coachLoaderRan = true;
+
+  var slug = (COACH_SLUG_OVERRIDE || location.pathname.replace(/\/+$/, '').split('/').pop() || '').toLowerCase();
+
+  var domReady = document.readyState === 'loading'
+    ? new Promise(function (r) { document.addEventListener('DOMContentLoaded', r, { once: true }); })
+    : Promise.resolve();
+
+  var config = fetch(COACH_WORKER_URL + '/api/coach-page?slug=' + encodeURIComponent(slug))
+    .then(function (r) {
+      if (!r.ok) throw new Error('coach-page answered ' + r.status + ' for slug "' + slug + '"');
+      return r.json();
+    });
+
+  // Run the page's own scripts, in order, as ordinary scripts: their top-level
+  // const/let/function declarations land in global scope exactly as before.
+  function runDeferred(){
+    var list = document.querySelectorAll('script[type="text/coach-deferred"]');
+    for (var i = 0; i < list.length; i++) {
+      var old = list[i];
+      if (old.getAttribute('data-ran')) continue;
+      old.setAttribute('data-ran', '1');
+      var s = document.createElement('script');
+      s.text = old.text;
+      old.parentNode.insertBefore(s, old.nextSibling);
+    }
+  }
+
+  Promise.all([config, domReady]).then(function (res) {
+    var c = res[0];
+    Object.assign(CONFIG, {
+      authorName: c.authorName || '',
+      bookTitle: c.bookTitle || '',
+      authorPhotoURL: c.authorPhotoURL || '',
+      authorInitials: c.authorInitials || '',
+      pageTitle: c.pageTitle || document.title,
+      authorURL: c.authorURL || '',
+      showActivation: c.showActivation === true,
+      showBooks: c.showBooks === true,
+      showCourses: false,
+      books: Array.isArray(c.books) ? c.books : [],
+      courses: [],
+      COACH_CODE: String(c.code || '')
+    });
+    runDeferred();
+  }).catch(function (err) {
+    // No config means no coach code: the chat cannot work, so say so plainly
+    // instead of showing an empty page that looks broken.
+    console.error('[coach] ' + (err && err.message));
+    domReady.then(function () {
+      var box = document.getElementById('messages');
+      if (box) box.textContent = 'This coach is not available right now. Please refresh in a minute.';
+      var act = document.getElementById('activate');
+      if (act) act.remove();
+    });
+  });
+})();
 </script>
 
 <title>Book Coach AI</title>
@@ -407,7 +464,7 @@ line-height:1.35;text-align:left;
   </section>
 </main>
 
-<script>
+<script type="text/coach-deferred">
   
 
 document.getElementById('authorName').textContent = CONFIG.authorName;
@@ -1025,7 +1082,7 @@ if(SpeechRecognition){
 }
 
 </script>
-<script>
+<script type="text/coach-deferred">
 /* =========================================================================
    Phone activation — only shown when opened from inside a course lesson
    ========================================================================= */

@@ -6,8 +6,9 @@
  * Admin token in this project (plans/21 §D). Every call is mocked in the tests;
  * the first real run must be watched, and this note removed once it passes.
  *
- * Needs `shared.shopifyAdminToken` and `shared.shopifyShop`
- * (e.g. "get-published-pro.myshopify.com") in coaches.json. Scopes:
+ * Needs `shared.shopifyShop` (e.g. "get-published-pro.myshopify.com"),
+ * `shared.shopifyClientId` and `shared.shopifyClientSecret` in coaches.json —
+ * a Dev Dashboard app, see shopifyAccessToken. Scopes:
  *   write_products       create the bundle, set price/SKU/weight, add to collection
  *   write_publications   publish it to the Online Store
  *   write_draft_orders   the $0 test order
@@ -19,6 +20,50 @@
 export const SHOPIFY_API_VERSION = '2025-07';
 export const BUNDLE_COLLECTION = 'coach-bundles';
 export const DELIVERED_TAG = 'delivered-manual';
+
+/**
+ * Shopify no longer shows an Admin token anywhere (legacy admin-created custom
+ * apps were retired). A Dev Dashboard app installed on a store in the SAME
+ * organization trades its Client ID + secret for a token on demand — the
+ * "client credentials grant". The token lasts 24 hours, so every run mints its
+ * own and nothing long-lived is ever stored.
+ *
+ * `shop_not_permitted` means the app and the store are in different Shopify
+ * organizations: recreate the app from inside this store's admin.
+ */
+export async function shopifyAccessToken({ shop, clientId, clientSecret, fetchImpl = fetch }) {
+  const res = await fetchImpl(`https://${shop}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+    body: new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret }).toString(),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.access_token) {
+    const why = JSON.stringify(body).slice(0, 200);
+    throw new Error(`Shopify token exchange ${res.status}: ${why}${/shop_not_permitted/.test(why) ? ' — the app is not in this store\'s organization; create it from this store\'s admin' : ''}`);
+  }
+  return { token: body.access_token, scope: body.scope || '' };
+}
+
+/** The Shopify settings a command needs, and what is missing. */
+export function shopifyConfig(shared = {}) {
+  const shop = String(shared.shopifyShop || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const missing = [];
+  if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop)) missing.push('shared.shopifyShop (the store\'s xxx.myshopify.com domain)');
+  if (!shared.shopifyClientId) missing.push('shared.shopifyClientId');
+  if (!shared.shopifyClientSecret) missing.push('shared.shopifyClientSecret');
+  return { shop, clientId: shared.shopifyClientId, clientSecret: shared.shopifyClientSecret, missing };
+}
+
+/** Token exchange + client in one step. */
+export async function connectShopify(shared, { fetchImpl = fetch } = {}) {
+  const cfg = shopifyConfig(shared);
+  if (cfg.missing.length) throw new Error(`Shopify is not configured: ${cfg.missing.join(', ')}`);
+  const { token, scope } = await shopifyAccessToken({ ...cfg, fetchImpl });
+  const need = ['write_products', 'write_publications', 'write_draft_orders', 'write_orders'];
+  const lacking = need.filter((s) => !scope.split(',').map((x) => x.trim()).includes(s));
+  return { gql: makeGql({ shop: cfg.shop, token, fetchImpl }), scope, lacking };
+}
 
 /** A GraphQL client that throws on transport errors AND on userErrors. */
 export function makeGql({ shop, token, fetchImpl = fetch }) {

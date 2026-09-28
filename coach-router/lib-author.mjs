@@ -198,6 +198,15 @@ export async function authorStatus(coach, ctx, { all = [], deep = false } = {}) 
     if (r.status !== 200) return rows.push(row(2, 'page exists', 'TODO', `${conv.pageUrl} -> ${r.status}`, `npm run author -- page --code ${coach.code}, paste into a clone of /freddy-davis`));
     const p = parseCoachPage(r.text);
     rows.push(row(2, 'page exists', 'DONE', conv.pageUrl));
+    // A page built from pages/coach-page.html carries no CONFIG values at all:
+    // it asks /api/coach-page, and the Worker decides showActivation. The
+    // registry is then the only thing to check — and it is checked everywhere else.
+    if (r.text.includes('/api/coach-page')) {
+      rows.push(row(2, 'loads its config from the registry', 'DONE', 'pages/coach-page.html loader — nothing on the page to drift'));
+      rows.push(...foreignRows(2, r.text, foreign));
+      return;
+    }
+    rows.push(row(2, 'on the loader template', 'TODO', 'hand-edited CONFIG block', 'paste pages/coach-page.html into this page: nothing per-author left to edit'));
     rows.push(p.coachCode === coach.code
       ? row(2, 'talks through the Worker', 'DONE', `COACH_CODE ${p.coachCode}`)
       : p.coachCode

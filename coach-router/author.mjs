@@ -24,7 +24,7 @@ import { saveRegistry, readState } from './lib-registry.mjs';
 import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
 } from './lib-author.mjs';
-import { makeGql, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION } from './lib-shopify.mjs';
+import { connectShopify, shopifyConfig, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION } from './lib-shopify.mjs';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'all';
@@ -229,10 +229,10 @@ if (cmd === 'shopify') {
   const coach = pick();
   const opts = { coach, price: valOf('--price') || '29.95', sku: valOf('--sku'), grams: valOf('--grams') };
   const problems = bundleProblems(opts);
-  if (!shared.shopifyAdminToken || !shared.shopifyShop) {
-    problems.push('no Shopify Admin token: add shared.shopifyAdminToken and shared.shopifyShop to coaches.json. ' +
-      'Shopify admin -> Settings -> Apps -> Develop apps -> create app -> Admin API scopes: ' +
-      'write_products, write_publications, write_draft_orders, write_orders -> install (plans/21 §D)');
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) {
+    problems.push(`Shopify not configured — missing ${sc.missing.join(', ')}. See plans/21 §D: a Dev Dashboard app ` +
+      '(Create app manually) with write_products, write_publications, write_draft_orders, write_orders, installed on the store');
   }
   console.log(`\nShopify bundle for ${coach.code} ${coach.displayName || coach.name}${has('--write') ? '' : '   (DRY RUN)'}\n`);
   console.log(`  title    ${bundleTitle(coach)}`);
@@ -245,7 +245,9 @@ if (cmd === 'shopify') {
   }
   let made;
   try {
-    made = await createBundle(makeGql({ shop: shared.shopifyShop, token: shared.shopifyAdminToken }), opts);
+    const { gql, lacking } = await connectShopify(shared);
+    if (lacking.length) throw new Error(`the Shopify app is missing scopes: ${lacking.join(', ')} — add them in the Dev Dashboard, release a new version, reinstall`);
+    made = await createBundle(gql, opts);
   } catch (err) {
     die(`STOPPED: ${err.message}\n  Already in Shopify: ${JSON.stringify(err.created || {})}\n  coaches.json was NOT changed.`);
   }

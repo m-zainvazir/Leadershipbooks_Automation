@@ -31,7 +31,7 @@ import { __test } from './coach-router.worker.js';
 import {
   testEmail, emailProblems, orderPayload, coachProblems, checkContact, checkTrialRecord, formatTable, LIMITS_NOTICE, LIMITS_NOTICE_ORDER,
 } from './lib-verify-author.mjs';
-import { makeGql, placeTestOrder, cancelTestOrder, DELIVERED_TAG } from './lib-shopify.mjs';
+import { connectShopify, shopifyConfig, placeTestOrder, cancelTestOrder, DELIVERED_TAG } from './lib-shopify.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -80,9 +80,8 @@ for (const [k, v] of [['workerUrl', workerUrl], ['flowSharedSecret', shared.flow
   if (!v) problems.push(`coaches.json shared.${k} is required`);
 }
 if (SHOP) {
-  if (!shared.shopifyAdminToken || !shared.shopifyShop) {
-    problems.push('--shopify-order needs shared.shopifyAdminToken and shared.shopifyShop in coaches.json (plans/21 §D): scopes write_draft_orders + write_orders');
-  }
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) problems.push(`--shopify-order needs ${sc.missing.join(', ')} in coaches.json (plans/21 §D)`);
   if (coach && !coach.shopifyVariantId) problems.push(`coach ${coach.code} has no shopifyVariantId — npm run author -- status --code ${coach.code} prints the set command`);
 }
 if (problems.length) {
@@ -178,11 +177,14 @@ let endpointOk = false;
 let orderNumber = payload.order_number;
 let shopKey = `shop:${payload.order_id}`;
 let shopOrder = null;
-const gql = SHOP ? makeGql({ shop: shared.shopifyShop, token: shared.shopifyAdminToken }) : null;
+let gql = null;
 
 if (SHOP) {
   console.log('\n  placing the $0 order…');
   try {
+    const conn = await connectShopify(shared);
+    if (conn.lacking.length) throw new Error(`the Shopify app is missing scopes: ${conn.lacking.join(', ')}`);
+    gql = conn.gql;
     shopOrder = await placeTestOrder(gql, { variantId: coach.shopifyVariantId, email });
     orderNumber = shopOrder.orderName;
     // Flow sends order.id, a GID — the Worker's idempotency key is built from it.
