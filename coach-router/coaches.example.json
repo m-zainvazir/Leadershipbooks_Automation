@@ -9,6 +9,12 @@
     "allowedOrigin": "",
     "ghlApiToken": "",
     "ghlLocationId": "",
+    "shopifyWebhookSecret": "",
+    "flowSharedSecret": "",
+    "shopifyShop": "",
+    "shopifyClientId": "",
+    "shopifyClientSecret": "",
+    "verifyEmail": "",
     "config": {
       "entitlementMode": "off",
       "leaseHours": 48,

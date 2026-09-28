@@ -225,6 +225,86 @@ if (cmd === 'zipify') {
   process.exit(0);
 }
 
+if (cmd === 'check') {
+  // Read-only proof of every credential the tools and the Worker depend on.
+  // Nothing is written anywhere: each GHL scope is exercised by one GET/search.
+  const L = encodeURIComponent(shared.ghlLocationId || '');
+  const anyProduct = (coaches.find((c) => c.ghlProductId) || {}).ghlProductId;
+  const probes = [
+    ['contacts.readonly', 'POST', '/contacts/search', { locationId: shared.ghlLocationId, pageLimit: 1 }],
+    ['products.readonly', 'GET', `/products/?locationId=${L}&limit=1`],
+    ['products/prices.readonly', 'GET', anyProduct ? `/products/${anyProduct}/price?locationId=${L}` : null],
+    ['payments/subscriptions.readonly', 'GET', `/payments/subscriptions?altId=${L}&altType=location&limit=1`, null, 'the Worker\'s subscriber sync — REQUIRED'],
+    ['workflows.readonly', 'GET', `/workflows/?locationId=${L}`, null, 'grant-workflow check'],
+    ['locations/tags.readonly', 'GET', `/locations/${L}/tags`, null, 'tag checks'],
+    ['locations/customFields.readonly', 'GET', `/locations/${L}/customFields`, null, 'field names'],
+  ];
+  const probeToken = async (token) => {
+    const out = [];
+    for (const [scope, method, path, body, why] of probes) {
+      if (!path) { out.push([scope, 'skip', 'no product recorded to read']); continue; }
+      const res = await fetch(`https://services.leadconnectorhq.com${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, Version: '2021-07-28', accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      out.push([scope, res.ok ? 'ok' : String(res.status), why || '']);
+    }
+    return out;
+  };
+  const report = {};
+  for (const key of ['ghlApiToken', 'ghlApiTokenNew']) {
+    if (!shared[key]) { console.log(`\n  GHL ${key}: (empty)`); continue; }
+    report[key] = await probeToken(shared[key]);
+    console.log(`\n  GHL ${key}${key === 'ghlApiToken' ? '  (live — the Worker uses this)' : '  (candidate)'}`);
+    for (const [scope, st, why] of report[key]) console.log(`    ${st === 'ok' ? '✓' : st === 'skip' ? '·' : '✗'} ${scope.padEnd(34)} ${st === 'ok' ? '' : st}${why ? `   ${why}` : ''}`);
+  }
+  console.log('    (write scopes — contacts, products, prices, tags — are not probed: that would mean writing)');
+
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) {
+    console.log(`\n  Shopify: not configured — missing ${sc.missing.join(', ')}`);
+  } else {
+    try {
+      const conn = await connectShopify(shared);
+      const { shop } = await conn.gql('{ shop { name myshopifyDomain } }');
+      console.log(`\n  Shopify: ✓ connected to "${shop.name}" (${shop.myshopifyDomain}) via ${conn.via}`);
+      console.log(conn.lacking.length ? `    ✗ missing scopes: ${conn.lacking.join(', ')}` : '    ✓ all four scopes granted');
+    } catch (err) {
+      console.log(`\n  Shopify: ✗ ${err.message}`);
+    }
+  }
+
+  const cand = report.ghlApiTokenNew;
+  if (cand) {
+    const subsOk = cand.find(([s]) => s === 'payments/subscriptions.readonly')[1] === 'ok';
+    const allOk = cand.every(([, st]) => st === 'ok' || st === 'skip');
+    console.log(subsOk
+      ? `\n  → the new GHL token can run the subscriber sync${allOk ? ' and every check' : ''}. Switch with: npm run author -- promote-ghl-token`
+      : '\n  → the new GHL token CANNOT read subscriptions. Do not promote it: the Worker would stop recognising payers.');
+  }
+  console.log('');
+  process.exit(0);
+}
+
+if (cmd === 'promote-ghl-token') {
+  // Swap the candidate in, keep the old one beside it for rollback. The Worker
+  // only changes on `npm run secrets`, which is deliberately a separate step.
+  if (!shared.ghlApiTokenNew) die('shared.ghlApiTokenNew is empty — paste the new token there first, then npm run author -- check');
+  const res = await fetch(`https://services.leadconnectorhq.com/payments/subscriptions?altId=${encodeURIComponent(shared.ghlLocationId)}&altType=location&limit=1`, {
+    headers: { Authorization: `Bearer ${shared.ghlApiTokenNew}`, Version: '2021-07-28', accept: 'application/json' },
+  });
+  if (!res.ok) die(`REFUSING: the new token gets ${res.status} on /payments/subscriptions. Promoted, it would break the subscriber sync.`);
+  const { backup } = saveRegistry((doc) => {
+    doc.shared.ghlApiTokenOld = doc.shared.ghlApiToken;
+    doc.shared.ghlApiToken = doc.shared.ghlApiTokenNew;
+    delete doc.shared.ghlApiTokenNew;
+  }, { label: 'promote-ghl-token' });
+  console.log(`\n  ghlApiToken now holds the new token; the old one is kept as ghlApiTokenOld (backup: ${backup}).`);
+  console.log('  Next: npm run secrets   (the Worker switches), then npm run subs -- --dry   (the sync still works)\n');
+  process.exit(0);
+}
+
 if (cmd === 'config') {
   // Shared settings the tools read. Kept in coaches.json (gitignored), never in
   // code: the test inbox is a personal address and the repo is public.
@@ -290,4 +370,4 @@ if (cmd === 'shopify') {
   process.exit(0);
 }
 
-die(`unknown command "${cmd}". Use: (none) | status | set | config | page | zipify | shopify`);
+die(`unknown command "${cmd}". Use: (none) | status | set | config | check | promote-ghl-token | page | zipify | shopify`);

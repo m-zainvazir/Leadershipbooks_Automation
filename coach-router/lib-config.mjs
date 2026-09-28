@@ -192,7 +192,7 @@ export function assertNoSecrets(value) {
   const json = JSON.stringify(value);
   // `pit-` is matched with a length floor so an ordinary word could never trip
   // it — a GHL Private Integration Token is `pit-` plus a UUID.
-  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
+  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"ghlApiTokenNew"|"ghlApiTokenOld"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
     throw new Error(`Refusing to write a value that looks like it contains a credential: ${json.slice(0, 120)}`);
   }
 }
