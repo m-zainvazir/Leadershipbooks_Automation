@@ -105,7 +105,7 @@ const fieldValue = (contact, key) => {
  * status: PASS | FAIL | WARN. WARN is a registry value not yet filled in — the
  * field is correctly left unwritten, but a customer email would show a gap.
  */
-export function checkContact(contact, coach, { orderNumber, now = new Date(), formatTrialEnd }) {
+export function checkContact(contact, coach, { orderNumber, now = new Date(), formatTrialEnd, source = VERIFY_SOURCE }) {
   const rows = [];
   const row = (check, expected, actual, ok, warn = false) =>
     rows.push({ check, expected: String(expected), actual: actual === undefined ? '(absent)' : String(actual), status: ok ? 'PASS' : warn ? 'WARN' : 'FAIL' });
@@ -131,7 +131,7 @@ export function checkContact(contact, coach, { orderNumber, now = new Date(), fo
   eq('coach_book_title', coach.bookTitle);
   eq('coach_link', coach.courseLessonUrl);
   eq('coach_landing_url', coach.landingPageUrl);
-  eq('coach_trial_source', VERIFY_SOURCE);
+  eq('coach_trial_source', source);
   eq('shopify_order_number', orderNumber);
 
   // Dates: the Worker stamps its own clock, so allow the run to straddle UTC
@@ -166,6 +166,12 @@ export function formatTable(rows) {
   const line = (r) => `  ${r.status.padEnd(4)}  ${cut(r.check, a)}  ${cut(r.expected, b)}  ${cut(r.actual, c)}`;
   return [line({ status: '', check: 'check', expected: 'expected', actual: 'actual' }), ...rows.map(line)].join('\n');
 }
+
+/** Printed after a --shopify-order run: Flow was exercised, Zipify was not. */
+export const LIMITS_NOTICE_ORDER = [
+  'This exercised a real Shopify order and Flow B, but NOT the Zipify Add-to-Cart button.',
+  'npm run author -- status checks the button\'s cart link; a click-through on the live page is still worth doing once.',
+].join('\n  ');
 
 /** Printed on every run, pass or fail. */
 export const LIMITS_NOTICE = [

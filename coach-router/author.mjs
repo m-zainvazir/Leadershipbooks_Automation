@@ -7,6 +7,8 @@
  *   npm run author -- set --code 1044 --shopifyProductId 123 --courseLessonUrl https://...
  *   npm run author -- page --code 1044               the coach page CONFIG block to paste
  *   npm run author -- zipify --code 1044 --from 1043 the Zipify find-and-replace list
+ *   npm run author -- shopify --code 1044 --sku BC978... --grams 450 [--price 29.95] [--write]
+ *                                                    create the bundle (needs the Admin token)
  *
  * `status` and the table READ every system and write nothing. `--deep` also
  * compares KV field by field against coaches.json (slower: one wrangler call).
@@ -22,6 +24,7 @@ import { saveRegistry, readState } from './lib-registry.mjs';
 import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
 } from './lib-author.mjs';
+import { makeGql, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION } from './lib-shopify.mjs';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'all';
@@ -221,4 +224,39 @@ if (cmd === 'zipify') {
   process.exit(0);
 }
 
-die(`unknown command "${cmd}". Use: (none) | status | set | page | zipify`);
+if (cmd === 'shopify') {
+  // Runbook step 3. Dry by default; --write creates the product.
+  const coach = pick();
+  const opts = { coach, price: valOf('--price') || '29.95', sku: valOf('--sku'), grams: valOf('--grams') };
+  const problems = bundleProblems(opts);
+  if (!shared.shopifyAdminToken || !shared.shopifyShop) {
+    problems.push('no Shopify Admin token: add shared.shopifyAdminToken and shared.shopifyShop to coaches.json. ' +
+      'Shopify admin -> Settings -> Apps -> Develop apps -> create app -> Admin API scopes: ' +
+      'write_products, write_publications, write_draft_orders, write_orders -> install (plans/21 §D)');
+  }
+  console.log(`\nShopify bundle for ${coach.code} ${coach.displayName || coach.name}${has('--write') ? '' : '   (DRY RUN)'}\n`);
+  console.log(`  title    ${bundleTitle(coach)}`);
+  console.log(`  price    $${opts.price}   sku ${opts.sku || '(missing)'}   weight ${opts.grams || '(missing)'} g   ships: yes`);
+  console.log(`  then     publish to Online Store, add to the ${BUNDLE_COLLECTION} collection, record the ids`);
+  if (problems.length) die(`REFUSING — nothing created:\n  x ${problems.join('\n  x ')}`);
+  if (!has('--write')) {
+    console.log('\nDry run only. Re-run with --write.\n');
+    process.exit(0);
+  }
+  let made;
+  try {
+    made = await createBundle(makeGql({ shop: shared.shopifyShop, token: shared.shopifyAdminToken }), opts);
+  } catch (err) {
+    die(`STOPPED: ${err.message}\n  Already in Shopify: ${JSON.stringify(err.created || {})}\n  coaches.json was NOT changed.`);
+  }
+  console.log(`\n  created  product ${made.productId}  variant ${made.variantId}  /products/${made.handle}`);
+  const { backup, warnings } = saveRegistry((doc) => {
+    Object.assign(doc.coaches.find((c) => String(c.code) === coach.code), { shopifyProductId: made.productId, shopifyVariantId: made.variantId });
+  }, { label: `shopify-${coach.code}`, code: coach.code });
+  console.log(`  recorded shopifyProductId + shopifyVariantId   (backup: ${backup})`);
+  for (const w of warnings) console.log(`    ${w}`);
+  console.log(`\n  Zipify cart link: https://leadershipbooks.com/cart/${made.variantId}:1\n  Not pushed. npm run push when ready.\n`);
+  process.exit(0);
+}
+
+die(`unknown command "${cmd}". Use: (none) | status | set | page | zipify | shopify`);

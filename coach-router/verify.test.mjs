@@ -3474,5 +3474,87 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Shopify Admin (lib-shopify.mjs) — plans/21 §D. Mocked: no token exists yet.
+ * ------------------------------------------------------------------------- */
+{
+  const SH = await import('./lib-shopify.mjs');
+  const R = { code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', bookTitle: 'Running on Faith' };
+
+  // A scripted Shopify: answers by the first mutation/query name in the document.
+  const fakeShop = ({ failOn = null, userErrorOn = null, publications = [{ id: 'gid://shopify/Publication/1', name: 'Online Store' }], collection = true, orderTags = ['delivered-manual', 'coach-test'] } = {}) => {
+    const calls = [];
+    const gql = async (query, vars) => {
+      const op = /(productCreate|productVariantsBulkUpdate|publications|publishablePublish|collections|collectionAddProducts|draftOrderCreate|draftOrderComplete|orderCancel)/.exec(query)[1];
+      calls.push({ op, vars, query });
+      if (op === failOn) throw new Error(`Shopify 500 on ${op}`);
+      const ue = op === userErrorOn ? [{ field: ['x'], message: 'nope' }] : [];
+      switch (op) {
+        case 'productCreate': return { productCreate: { product: { id: 'gid://shopify/Product/111', handle: 'running-on-faith-rick-meyer', variants: { nodes: [{ id: 'gid://shopify/ProductVariant/222' }] } }, userErrors: ue } };
+        case 'productVariantsBulkUpdate': return { productVariantsBulkUpdate: { productVariants: [], userErrors: ue } };
+        case 'publications': return { publications: { nodes: publications } };
+        case 'publishablePublish': return { publishablePublish: { userErrors: ue } };
+        case 'collections': return { collections: { nodes: collection ? [{ id: 'gid://shopify/Collection/9' }] : [] } };
+        case 'collectionAddProducts': return { collectionAddProducts: { userErrors: ue } };
+        case 'draftOrderCreate': return { draftOrderCreate: { draftOrder: { id: 'gid://shopify/DraftOrder/5' }, userErrors: ue } };
+        case 'draftOrderComplete': return { draftOrderComplete: { draftOrder: { order: { id: 'gid://shopify/Order/777', name: '#4300', tags: orderTags } }, userErrors: ue } };
+        case 'orderCancel': return { orderCancel: { orderCancelUserErrors: ue } };
+      }
+    };
+    return { gql, calls, ops: () => calls.map((c) => c.op) };
+  };
+  const opts = { coach: R, price: '29.95', sku: 'BC9781951648213', grams: '450' };
+
+  console.log('\nshopify - bundle');
+  t('title follows the convention', SH.bundleTitle(R), 'Running on Faith [Rick Meyer] + Your Personal AI Coach');
+  t('complete inputs pass', SH.bundleProblems(opts), []);
+  truthy('weight 0 is refused (breaks carrier rates)', SH.bundleProblems({ ...opts, grams: '0' }).some((p) => /weight/.test(p)));
+  truthy('a SKU off the BC<ISBN> convention is refused', SH.bundleProblems({ ...opts, sku: 'RICK1' }).some((p) => /BC<ISBN>/.test(p)));
+  truthy('an author who already has a bundle is refused (create, never edit)', SH.bundleProblems({ ...opts, coach: { ...R, shopifyProductId: '1' } }).some((p) => /never edits/.test(p)));
+  {
+    const s = fakeShop();
+    const r = await SH.createBundle(s.gql, opts);
+    t('returns numeric ids and the handle', [r.productId, r.variantId, r.handle], ['111', '222', 'running-on-faith-rick-meyer']);
+    t('create, price, publish, collect — in that order',
+      s.ops(), ['productCreate', 'productVariantsBulkUpdate', 'publications', 'publishablePublish', 'collections', 'collectionAddProducts']);
+    const v = s.calls[1].vars.variants[0];
+    t('price, SKU, weight and shipping are all set', [v.price, v.inventoryItem.sku, v.inventoryItem.requiresShipping, v.inventoryItem.measurement.weight], ['29.95', 'BC9781951648213', true, { value: 450, unit: 'GRAMS' }]);
+    t('published to the ONLINE STORE (or the cart link 404s)', s.calls[3].vars.input, [{ publicationId: 'gid://shopify/Publication/1' }]);
+  }
+  {
+    let err = null;
+    try { await SH.createBundle(fakeShop({ userErrorOn: 'productVariantsBulkUpdate' }).gql, opts); } catch (e) { err = e; }
+    truthy('a userError (HTTP 200!) still throws, naming the step', err && /productVariantsBulkUpdate/.test(err.message));
+    t('...and says the product already exists', err && err.created, { productId: '111', handle: 'running-on-faith-rick-meyer', variantId: '222' });
+  }
+  {
+    let err = null;
+    try { await SH.createBundle(fakeShop({ publications: [{ id: 'p', name: 'Point of Sale' }] }).gql, opts); } catch (e) { err = e; }
+    truthy('no Online Store publication throws rather than leaving it unlisted', err && /Online Store/.test(err.message));
+    const s = fakeShop({ collection: false });
+    const r = await SH.createBundle(s.gql, opts);
+    t('a missing coach-bundles collection is skipped, not fatal (it is insurance)', [r.productId, s.ops().includes('collectionAddProducts')], ['111', false]);
+  }
+
+  console.log('\nshopify - test order');
+  {
+    const s = fakeShop();
+    const o = await SH.placeTestOrder(s.gql, { variantId: '222', email: 'me+verify@x.com' });
+    t('returns the order', [o.orderId, o.orderName], ['777', '#4300']);
+    const input = s.calls[0].vars.input;
+    truthy('tagged delivered-manual, so Order created fires Flow B', input.tags.includes('delivered-manual'));
+    t('100% off — a $0 order', input.appliedDiscount, { valueType: 'PERCENTAGE', value: 100, title: 'verify-author' });
+    t('the variant as a GID', input.lineItems, [{ variantId: 'gid://shopify/ProductVariant/222', quantity: 1 }]);
+    t('completed as paid (paymentPending false) so it is a real order', s.calls[1].vars, { id: 'gid://shopify/DraftOrder/5' });
+    const c = fakeShop();
+    t('cancel succeeds', await SH.cancelTestOrder(c.gql, 'gid://shopify/Order/777'), true);
+    truthy('...this order, without refund, without notifying the customer',
+      c.calls[0].vars.orderId === 'gid://shopify/Order/777' && /refund: false/.test(c.calls[0].query) && /notifyCustomer: false/.test(c.calls[0].query));
+    let err = null;
+    try { await SH.cancelTestOrder(fakeShop({ userErrorOn: 'orderCancel' }).gql, 'x'); } catch (e) { err = e; }
+    truthy('a cancel userError (its own field name) still throws', err && /orderCancel/.test(err.message));
+  }
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
