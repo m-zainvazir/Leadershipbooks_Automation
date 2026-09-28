@@ -25,6 +25,7 @@ import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
 } from './lib-author.mjs';
 import { connectShopify, shopifyConfig, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION } from './lib-shopify.mjs';
+import { emailProblems } from './lib-verify-author.mjs';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'all';
@@ -224,6 +225,34 @@ if (cmd === 'zipify') {
   process.exit(0);
 }
 
+if (cmd === 'config') {
+  // Shared settings the tools read. Kept in coaches.json (gitignored), never in
+  // code: the test inbox is a personal address and the repo is public.
+  const SETTABLE = { verifyEmail: 'the inbox verify-author sends its test welcome emails to' };
+  const changes = {};
+  for (const k of Object.keys(SETTABLE)) {
+    const v = valOf(`--${k}`);
+    if (v === undefined) continue;
+    const probs = k === 'verifyEmail' ? emailProblems(v) : [];
+    if (probs.length) die(`Nothing written:\n  x ${probs.join('\n  x ')}`);
+    changes[k] = v.trim().toLowerCase();
+  }
+  if (!Object.keys(changes).length) {
+    console.log('\n  Shared settings (coaches.json "shared"):\n');
+    for (const [k, why] of Object.entries(SETTABLE)) console.log(`    --${k.padEnd(14)} ${JSON.stringify(shared[k] || '')}   ${why}`);
+    console.log('\n  Change one: npm run author -- config --verifyEmail you@example.org\n');
+    process.exit(0);
+  }
+  try {
+    const { backup } = saveRegistry((doc) => { Object.assign(doc.shared, changes); }, { label: 'config' });
+    for (const [k, v] of Object.entries(changes)) console.log(`\n  ${k} = ${v}   (backup: ${backup})`);
+    console.log('');
+  } catch (err) {
+    die(err.message);
+  }
+  process.exit(0);
+}
+
 if (cmd === 'shopify') {
   // Runbook step 3. Dry by default; --write creates the product.
   const coach = pick();
@@ -261,4 +290,4 @@ if (cmd === 'shopify') {
   process.exit(0);
 }
 
-die(`unknown command "${cmd}". Use: (none) | status | set | page | zipify | shopify`);
+die(`unknown command "${cmd}". Use: (none) | status | set | config | page | zipify | shopify`);

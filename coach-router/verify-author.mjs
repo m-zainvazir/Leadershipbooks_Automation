@@ -52,6 +52,7 @@ const IS_WIN = process.platform === 'win32';
 // Flow adds its own latency on top of GHL's ~20 s search lag.
 const SEARCH_TIMEOUT_MS = SHOP ? 300_000 : 120_000;
 const POLL_MS = 5_000;
+const EMAIL_GRACE_MS = 60_000;
 
 const die = (msg) => {
   console.error(`\n${msg}\n`);
@@ -62,8 +63,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ------------------------------------------------------------------ inputs --- */
 
 const code = valOf('--code');
-const baseEmail = valOf('--email');
-if (!code) die('Missing --code.\n\n  npm run verify-author -- --code 1044 --email you@yourdomain.com');
+if (!code) die('Missing --code.\n\n  npm run verify-author -- --code 1044 [--email you@yourdomain.com]');
 
 let config;
 try {
@@ -72,6 +72,8 @@ try {
   die(err.message);
 }
 const { shared, coaches } = config;
+// --email wins; otherwise the saved test inbox (npm run author -- config --verifyEmail ...).
+const baseEmail = valOf('--email') || shared.verifyEmail;
 const coach = coaches.find((c) => c.code === String(code));
 const workerUrl = String(shared.workerUrl || '').replace(/\/+$/, '');
 
@@ -248,6 +250,14 @@ if (shopOrder) {
   } catch (err) {
     rows.push({ check: 'cleanup: test order cancelled (stops Flow A)', expected: 'cancelled', actual: `${err.message} — CANCEL ${shopOrder.orderName} BY HAND NOW`, status: 'FAIL' });
   }
+}
+
+// Give GHL time to SEND before the contact disappears: the welcome email and
+// the Course360 grant are workflow actions on this contact, and a contact
+// deleted first gets neither — which would look like a broken email.
+if (contact && !KEEP && !has('--no-wait')) {
+  console.log(`\n  waiting ${EMAIL_GRACE_MS / 1000}s so GHL sends the welcome email before cleanup (--no-wait skips)…`);
+  await sleep(EMAIL_GRACE_MS);
 }
 
 // Left in place a test contact is tagged, so the next reconcile grants it a

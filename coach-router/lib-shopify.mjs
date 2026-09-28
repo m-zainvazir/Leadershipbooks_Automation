@@ -50,19 +50,37 @@ export function shopifyConfig(shared = {}) {
   const shop = String(shared.shopifyShop || '').trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const missing = [];
   if (!/^[a-z0-9-]+\.myshopify\.com$/.test(shop)) missing.push('shared.shopifyShop (the store\'s xxx.myshopify.com domain)');
-  if (!shared.shopifyClientId) missing.push('shared.shopifyClientId');
-  if (!shared.shopifyClientSecret) missing.push('shared.shopifyClientSecret');
-  return { shop, clientId: shared.shopifyClientId, clientSecret: shared.shopifyClientSecret, missing };
+  // Either credential style works. A fixed Admin API token (shpat_…) is what the
+  // older "Configuration / API credentials" screen hands out; the Dev Dashboard
+  // gives a Client ID + secret instead.
+  const adminToken = String(shared.shopifyAdminToken || '').trim();
+  if (!adminToken) {
+    if (!shared.shopifyClientId) missing.push('shared.shopifyClientId (or shared.shopifyAdminToken)');
+    if (!shared.shopifyClientSecret) missing.push('shared.shopifyClientSecret (or shared.shopifyAdminToken)');
+  }
+  return { shop, adminToken, clientId: shared.shopifyClientId, clientSecret: shared.shopifyClientSecret, missing };
 }
 
-/** Token exchange + client in one step. */
+export const REQUIRED_SCOPES = ['write_products', 'write_publications', 'write_draft_orders', 'write_orders'];
+
+/** Token (exchanged or fixed) + client + scope check, in one step. */
 export async function connectShopify(shared, { fetchImpl = fetch } = {}) {
   const cfg = shopifyConfig(shared);
   if (cfg.missing.length) throw new Error(`Shopify is not configured: ${cfg.missing.join(', ')}`);
-  const { token, scope } = await shopifyAccessToken({ ...cfg, fetchImpl });
-  const need = ['write_products', 'write_publications', 'write_draft_orders', 'write_orders'];
-  const lacking = need.filter((s) => !scope.split(',').map((x) => x.trim()).includes(s));
-  return { gql: makeGql({ shop: cfg.shop, token, fetchImpl }), scope, lacking };
+  let token = cfg.adminToken;
+  let scopes;
+  if (token) {
+    // A fixed token carries no scope list, so ask the installation itself.
+    const gql = makeGql({ shop: cfg.shop, token, fetchImpl });
+    const data = await gql('{ currentAppInstallation { accessScopes { handle } } }');
+    scopes = data.currentAppInstallation.accessScopes.map((s) => s.handle);
+  } else {
+    const ex = await shopifyAccessToken({ ...cfg, fetchImpl });
+    token = ex.token;
+    scopes = ex.scope.split(',').map((x) => x.trim()).filter(Boolean);
+  }
+  const lacking = REQUIRED_SCOPES.filter((s) => !scopes.includes(s));
+  return { gql: makeGql({ shop: cfg.shop, token, fetchImpl }), scope: scopes.join(','), lacking, via: cfg.adminToken ? 'admin token' : 'client credentials' };
 }
 
 /** A GraphQL client that throws on transport errors AND on userErrors. */

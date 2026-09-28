@@ -61,7 +61,7 @@ export function testEmail(base, code, now = new Date()) {
  */
 export function emailProblems(base) {
   const e = String(base || '').trim().toLowerCase();
-  if (!e) return ['--email is required: a real inbox you own. The run sends it the real welcome email.'];
+  if (!e) return ['no test inbox: pass --email, or save one with npm run author -- config --verifyEmail you@example.org. The run sends it the real welcome email.'];
   if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(e)) return [`--email "${base}" is not an email address`];
   if (/@(example\.(com|org|net)|[^@]*\.(invalid|test|example|localhost))$/.test(e)) {
     return [`--email "${base}" does not receive mail. The welcome email would bounce from the verified sending domain on every run — use a real inbox`];

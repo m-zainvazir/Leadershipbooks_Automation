@@ -3583,6 +3583,10 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     truthy('shop_not_permitted explains the organization rule', err && /organization/.test(err.message));
     const conn = await SH.connectShopify({ shopifyShop: 's.myshopify.com', shopifyClientId: 'a', shopifyClientSecret: 'b' }, { fetchImpl: fx({ access_token: 'T', scope: 'write_products,write_orders' }) });
     t('missing scopes are named, not discovered mid-run', conn.lacking, ['write_publications', 'write_draft_orders']);
+    t('a fixed admin token alone is a complete config', SH.shopifyConfig({ shopifyShop: 's.myshopify.com', shopifyAdminToken: 'shpat_x' }).missing, []);
+    const fixed = await SH.connectShopify({ shopifyShop: 's.myshopify.com', shopifyAdminToken: 'shpat_x' },
+      { fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ data: { currentAppInstallation: { accessScopes: SH.REQUIRED_SCOPES.map((handle) => ({ handle })) } } }) }) });
+    t('...its scopes are read from the installation', [fixed.via, fixed.lacking], ['admin token', []]);
     truthy('a client secret can never reach KV', (() => { try { assertNoSecrets({ shopifyClientSecret: 'x' }); return false; } catch { return true; } })());
   }
 
