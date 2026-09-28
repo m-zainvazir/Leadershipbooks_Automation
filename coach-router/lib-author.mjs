@@ -266,9 +266,29 @@ export async function authorStatus(coach, ctx, { all = [], deep = false } = {}) 
   });
 
   // 6 — grant workflow ---------------------------------------------------------
-  rows.push(row(6, 'grant workflow published', 'MANUAL',
-    `"Book Coach — Grant Course (${coach.displayName || coach.name})" on ${coach.ghlTag || 'the coach tag'}`,
-    'the GHL token has no workflows scope (401). Add workflows.readonly to the Private Integration and this becomes a check'));
+  // GHL's workflow list gives name + status, not the trigger. So: find it by the
+  // naming convention (either spelling of the author), require PUBLISHED — the
+  // failure that bit Freddy's onboarding — and leave the trigger to a human.
+  await safe(6, 'grant workflow', async () => {
+    let list;
+    try {
+      if (!ctx._workflows) ctx._workflows = (await ctx.ghl(`/workflows/?locationId=${encodeURIComponent(ctx.locationId)}`)).workflows || [];
+      list = ctx._workflows;
+    } catch (err) {
+      if (!/401/.test(err.message)) throw err;
+      return rows.push(row(6, 'grant workflow published', 'MANUAL', '', 'the GHL token has no workflows.readonly scope'));
+    }
+    const names = [coach.displayName, coach.name].filter(Boolean).map((n) => n.toLowerCase());
+    const hits = list.filter((w) => /^book coach\s*[—-]+\s*grant course\s*\(/i.test(w.name || '') && names.some((n) => w.name.toLowerCase().includes(`(${n})`)));
+    const want = `Book Coach — Grant Course (${coach.displayName || coach.name})`;
+    if (!hits.length) return rows.push(row(6, 'grant workflow published', 'TODO', `no workflow named "${want}"`, `create it: Contact Tag added = ${coach.ghlTag} -> Grant Course360 offer -> PUBLISH`));
+    const live = hits.filter((w) => w.status === 'published');
+    rows.push(live.length
+      ? row(6, 'grant workflow published', 'DONE', live.map((w) => w.name).join(', '))
+      : row(6, 'grant workflow published', 'FAIL', `"${hits[0].name}" is ${hits[0].status}`, 'publish it BEFORE the first order — the tag trigger only applies to tags added after publishing'));
+    if (hits.length > 1) rows.push(row(6, 'exactly one grant workflow', 'FAIL', hits.map((w) => `${w.name} [${w.status}]`).join(', '), 'two would grant the course twice, or race'));
+    rows.push(row(6, 'triggers on this coach\'s tag', 'MANUAL', coach.ghlTag || '', 'the API does not expose a workflow\'s trigger — confirm once in the builder'));
+  });
 
   // 7 — GHL product + price --------------------------------------------------
   await safe(7, 'GHL product', async () => {

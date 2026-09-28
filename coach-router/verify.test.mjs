@@ -3455,7 +3455,18 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     t('a leftover verify-author contact FAILS "clean"', byCheck(rows, 'no test contacts left entitled').status, 'FAIL');
     rows = await A.authorStatus(F, world({ lastVerify: { passed: true, at: '2026-09-28' } }), { all: [S, F] });
     t('a recorded verify-author pass is DONE', byCheck(rows, 'verify-author').status, 'DONE');
-    t('the grant workflow is MANUAL and says which scope would fix it', [byCheck(rows, 'grant workflow published').status, /workflows\.readonly/.test(byCheck(rows, 'grant workflow published').fix)], ['MANUAL', true]);
+    const wf = (workflows) => ({ ...world({}), ghl: async (path) => (path.startsWith('/workflows/') ? { workflows } : {}) });
+    rows = await A.authorStatus(F, { ...world({}), ghl: async (path) => { if (path.startsWith('/workflows/')) throw new Error('GHL 401 on /workflows/'); return {}; } }, { all: [S, F] });
+    t('no workflows scope: MANUAL, naming the scope', [byCheck(rows, 'grant workflow published').status, /workflows\.readonly/.test(byCheck(rows, 'grant workflow published').fix)], ['MANUAL', true]);
+    rows = await A.authorStatus(F, wf([{ name: 'Book Coach — Grant Course (Freddy Davis)', status: 'published' }]), { all: [S, F] });
+    t('a published grant workflow is DONE', byCheck(rows, 'grant workflow published').status, 'DONE');
+    t('...and its trigger is still a MANUAL confirm', byCheck(rows, 'triggers on this coach\'s tag').status, 'MANUAL');
+    rows = await A.authorStatus(F, wf([{ name: 'Book Coach — Grant Course (Freddy Davis)', status: 'draft' }]), { all: [S, F] });
+    t('🚨 a DRAFT grant workflow FAILS (Freddy\'s onboarding trap)', byCheck(rows, 'grant workflow published').status, 'FAIL');
+    rows = await A.authorStatus(S, wf([{ name: 'Book Coach — Grant Course (Micheal Stickler)', status: 'published' }]), { all: [S, F] });
+    t('the internal spelling matches too (Micheal)', byCheck(rows, 'grant workflow published').status, 'DONE');
+    rows = await A.authorStatus(F, wf([{ name: 'Book Coach — Grant Course (Michael Stickler)', status: 'published' }]), { all: [S, F] });
+    t('another author\'s workflow is not mistaken for this one', byCheck(rows, 'grant workflow published').status, 'TODO');
   }
 
   console.log('\nauthor - summary + one failing reader');
