@@ -17,7 +17,7 @@
  * The network is an injected `gql(query, variables)` so every rule is testable.
  */
 
-export const SHOPIFY_API_VERSION = '2025-07';
+export const SHOPIFY_API_VERSION = '2026-07'; // matches the Dev Dashboard app's version, 2026-09-28
 export const BUNDLE_COLLECTION = 'coach-bundles';
 export const DELIVERED_TAG = 'delivered-manual';
 
