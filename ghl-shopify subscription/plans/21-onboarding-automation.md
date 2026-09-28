@@ -195,6 +195,52 @@ not replace it.** Say so in its own output.
 
 **Effort:** ~2h.
 
+### ✅ Built 2026-09-28 — `coach-router/verify-author.mjs` + `lib-verify-author.mjs`, 23 tests (680 → 703)
+
+**Not yet run with `--write`** — waiting on a test inbox. Dry runs verified.
+
+```bash
+npm run verify-author -- --code 1043 --email you@yourdomain.com            # dry: the plan
+npm run verify-author -- --code 1043 --email you@yourdomain.com --write    # run it
+```
+
+| Design said | Built as | Why |
+|---|---|---|
+| `--email test@example.invalid` | **A real inbox, refused otherwise**; each run uses `you+verify-<code>-<stamp>@…` | 🚨 The contact gets `coach-trial-started`, so the **real welcome email sends**. A dead address is a bounce from the verified sending domain on every run |
+| "a signed payload" | **`X-Coach-Token`**, not HMAC | That is what Shopify Flow — the production caller — sends |
+| Reads fields back | By **field id**, from a hardcoded table | GET returns ids only and the token cannot list them (`401` on `/locations/<id>/customFields`). `coach_trial_ends` = `Y0QMX2OoGXLCy96tq1bL`, discovered today |
+| "Deletes the test contact" | Deletes it **only if this run created it** (fresh address checked before sending, `dateAdded` after the run started), and also deletes the `trial:` and `shop:` KV records | The runbook said the `trial:` record "cannot be deleted by hand". `wrangler kv key delete` can |
+
+Twelve checks — both tags, all ten fields — plus the endpoint response, the KV trial record and the
+cleanup. A registry value not filled in yet is a **WARN**, not a pass: the field is correctly
+absent, but a customer email would show a gap. Every run prints the Flow/Zipify caveat.
+
+---
+
+## Author #3 — Rick Meyer (`1044`), onboarded through `npm run onboard` · 2026-09-28
+
+| | |
+|---|---|
+| GHL tag | `bookcoach-rick-meyer-active` — ✅ created; verified held by nobody afterwards |
+| GHL product | `6aba640f86e4201cb55921ee` — ✅ verified by id: SERVICE, not in store |
+| GHL price | `6aba640f809b8051b34c2790` — ✅ verified: $59 USD recurring monthly |
+| `coaches.json` | ✅ entry appended, seed validation clean (2 expected warnings: Shopify, lesson) |
+| Voiceflow | ✅ `verify:vf` 200 — *"I'm the Running on Faith AI Coach, built on the teachings… of Rick Meyer"* |
+| KV | ⬜ **not pushed** — deliberately. See below |
+
+**Not pushed, on purpose.** Rick's live page still calls Voiceflow directly, with `showActivation`
+**absent**. Pushing is harmless (no Shopify product means nothing can grant him) but pointless until
+his page is repointed at the Worker with `COACH_CODE: "1044"` — which is §A for him.
+
+**Remaining for Rick, all M:** coach page onto the Worker pattern (§A), Shopify bundle, Course360
+course + Offer, grant workflow, funnel page at `/rick-meyer-coach-access` (currently **404**), Zipify
+page. Then add `shopifyProductId` + `courseLessonUrl`, `npm run push`, `verify-author`, $0 order.
+
+⚠ **Found while verifying:** contact `IzJVZoHSwC3wUtR6SYPs` (created 2026-09-18, from Freddy's #4233
+test) still holds `bookcoach-freddy-davis-active` + `coach-trial-started`, so it is entitled. The sweep
+removes the tag on 4 October. Runbook step 12 says to delete it — left for M, since it may be a
+teammate's deliberate test account.
+
 ---
 
 ## §D — Shopify, blocked on one credential

@@ -3270,5 +3270,79 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * verify-author (lib-verify-author.mjs) — plans/21 §C
+ * ------------------------------------------------------------------------- */
+{
+  const V = await import('./lib-verify-author.mjs');
+  const now = new Date('2026-09-28T10:00:00Z');
+  const coach = {
+    code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', bookTitle: 'Running on Faith', trialDays: 10,
+    ghlTag: 'bookcoach-rick-meyer-active', shopifyProductId: '123', landingPageUrl: 'https://www.book-coach.ai/rick-meyer-coach-access',
+    courseLessonUrl: 'https://login.example/courses/products/abc',
+  };
+
+  console.log('\nverify-author - addresses');
+  t('a fresh plus-address per run', V.testEmail('Me@Domain.com', '1044', now), 'me+verify-1044-20260928100000@domain.com');
+  t('an existing +tag is replaced, not stacked', V.testEmail('me+old@d.com', '1044', now), 'me+verify-1044-20260928100000@d.com');
+  truthy('no email is refused', V.emailProblems('').length);
+  truthy('example.com is refused (the welcome email would bounce)', V.emailProblems('a@example.com').some((p) => /bounce/.test(p)));
+  truthy('.invalid is refused', V.emailProblems('test@example.invalid').some((p) => /bounce/.test(p)));
+  t('a real address passes', V.emailProblems('muhammadzain@leadershipbooks.net'), []);
+
+  console.log('\nverify-author - payload');
+  {
+    const p = V.orderPayload({ coach, email: 'x@y.com', now });
+    t('order id is unique per run (the endpoint ignores a seen one for 30 days)', p.order_id, `verify-1044-${now.getTime()}`);
+    t('line item carries the coach product', p.line_items, [{ product_id: '123', quantity: 1 }]);
+    t('source is identifiable in GHL', p.source, 'verify_author');
+    falsy('no phone - GHL dedupes on phone too', 'phone' in p);
+    truthy('a coach with no Shopify product is refused', V.coachProblems({ ...coach, shopifyProductId: undefined }).some((x) => /shopifyProductId/.test(x)));
+  }
+
+  console.log('\nverify-author - checkContact');
+  {
+    const fmt = __test.formatTrialEnd;
+    const orderNumber = '#VERIFY-1044-1';
+    const f = (key, value) => ({ id: V.FIELD_IDS[key], value });
+    const good = {
+      tags: ['bookcoach-rick-meyer-active', 'coach-trial-started'],
+      customFields: [
+        f('coach_status', 'trial'), f('coach_code', '1044'), f('coach_name', 'Rick Meyer'), f('coach_book_title', 'Running on Faith'),
+        f('coach_link', coach.courseLessonUrl), f('coach_landing_url', coach.landingPageUrl), f('coach_trial_source', 'verify_author'),
+        f('shopify_order_number', orderNumber), f('coach_trial_started', '2026-09-28'), f('coach_trial_ends', '8 October 2026'),
+      ],
+    };
+    const rows = V.checkContact(good, coach, { orderNumber, now, formatTrialEnd: fmt });
+    t('a correct contact passes every check', rows.filter((r) => r.status !== 'PASS').map((r) => r.check), []);
+    t('twelve checks: two tags, ten fields', rows.length, 12);
+
+    const noTag = V.checkContact({ ...good, tags: ['coach-trial-started'] }, coach, { orderNumber, now, formatTrialEnd: fmt });
+    t('a missing coach tag FAILS (no entitlement)', noTag.find((r) => r.check === 'tag: coach entitlement').status, 'FAIL');
+
+    const wrongAuthor = V.checkContact({ ...good, customFields: good.customFields.map((x) => (x.id === V.FIELD_IDS.coach_name ? { ...x, value: 'Freddy Davis' } : x)) },
+      coach, { orderNumber, now, formatTrialEnd: fmt });
+    t('another author\'s name FAILS (the cross-grant symptom)', wrongAuthor.find((r) => r.check === 'coach_name').status, 'FAIL');
+
+    const unfilled = V.checkContact({ ...good, customFields: good.customFields.filter((x) => x.id !== V.FIELD_IDS.coach_link) },
+      { ...coach, courseLessonUrl: undefined }, { orderNumber, now, formatTrialEnd: fmt });
+    t('a registry value not filled in yet is a WARN, not a FAIL', unfilled.find((r) => r.check === 'coach_link').status, 'WARN');
+
+    const late = V.checkContact({ ...good, customFields: good.customFields.map((x) => (x.id === V.FIELD_IDS.coach_trial_ends ? { ...x, value: '9 October 2026' } : x)) },
+      coach, { orderNumber, now, formatTrialEnd: fmt });
+    t('a run straddling UTC midnight still passes the end date', late.find((r) => r.check === 'coach_trial_ends').status, 'PASS');
+    const wrongLen = V.checkContact({ ...good, customFields: good.customFields.map((x) => (x.id === V.FIELD_IDS.coach_trial_ends ? { ...x, value: '28 October 2026' } : x)) },
+      coach, { orderNumber, now, formatTrialEnd: fmt });
+    t('a wrong trial length FAILS', wrongLen.find((r) => r.check === 'coach_trial_ends').status, 'FAIL');
+  }
+
+  console.log('\nverify-author - trial record + report');
+  t('a matching trial record passes', V.checkTrialRecord({ contactId: 'C1', code: '1044', expiresAt: '2026-10-08T10:00:00Z' }, coach, 'C1').status, 'PASS');
+  t('no trial record FAILS - the reader would never expire', V.checkTrialRecord(null, coach, 'C1').status, 'FAIL');
+  t('a record for another contact FAILS', V.checkTrialRecord({ contactId: 'C2', code: '1044', expiresAt: '2026-10-08T10:00:00Z' }, coach, 'C1').status, 'FAIL');
+  truthy('the output says it does not replace the $0 order', /\$0 order/.test(V.LIMITS_NOTICE) && /Flow/.test(V.LIMITS_NOTICE));
+  truthy('the table renders every row', V.formatTable([{ status: 'PASS', check: 'a', expected: 'b', actual: 'c' }]).split('\n').length === 2);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
