@@ -109,14 +109,18 @@ const numericId = (gid) => String(gid || '').split('/').pop();
 /** The bundle title convention, plans/20 §7b-bis. */
 export const bundleTitle = (coach) => `${coach.bookTitle} [${coach.displayName || coach.name}] + Your Personal AI Coach`;
 
-/** Refusals before any call. SKU and weight are required: runbook §3. */
+/**
+ * Refusals before any call. SKU and weight are OPTIONAL: delivery goes through
+ * IngramSpark, updated by hand, not Shopify shipping (decided 2026-09-29).
+ * If given, they must still be well-formed.
+ */
 export function bundleProblems({ coach, price, sku, grams }) {
   const p = [];
   if (coach.shopifyProductId) p.push(`coach ${coach.code} already has shopifyProductId ${coach.shopifyProductId} — this creates, it never edits`);
   if (!coach.bookTitle) p.push('the record has no bookTitle — it is in the product title');
   if (!/^\d+(\.\d{2})?$/.test(String(price || ''))) p.push(`--price "${price}" must look like 29.95`);
-  if (!/^BC\d{10,13}$/.test(String(sku || ''))) p.push(`--sku "${sku || ''}" must follow BC<ISBN>, e.g. BC9781951648213`);
-  if (!(Number(grams) > 0)) p.push('--grams must be the real shipping weight — 0 breaks carrier-calculated rates');
+  if (sku && !/^BC\d{10,13}$/.test(String(sku))) p.push(`--sku "${sku}" must follow BC<ISBN>, e.g. BC9781951648213`);
+  if (grams !== undefined && !(Number(grams) > 0)) p.push('--grams, if given, must be a positive weight');
   return p;
 }
 
@@ -145,7 +149,18 @@ export async function createBundle(gql, { coach, price, sku, grams }) {
     check('productVariantsBulkUpdate', (await gql(
       `mutation($productId: ID!, $variants: [ProductVariantsBulkInput!]!) { productVariantsBulkUpdate(productId: $productId, variants: $variants) {
          productVariants { id } userErrors { field message } } }`,
-      { productId: product.id, variants: [{ id: variantGid, price: String(price), inventoryItem: { sku, requiresShipping: true, measurement: { weight: { value: Number(grams), unit: 'GRAMS' } } } }] },
+      {
+        productId: product.id,
+        variants: [{
+          id: variantGid,
+          price: String(price),
+          inventoryItem: {
+            requiresShipping: true, // a physical book, even though IngramSpark ships it
+            ...(sku ? { sku } : {}),
+            ...(grams ? { measurement: { weight: { value: Number(grams), unit: 'GRAMS' } } } : {}),
+          },
+        }],
+      },
     )).productVariantsBulkUpdate);
 
     // Published to the Online Store, or the Zipify cart link 404s.

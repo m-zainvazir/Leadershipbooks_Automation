@@ -3431,7 +3431,7 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     const prod = { id: 10454698754362, title: 'The Truth Mirage [Freddy Davis] + Your Personal AI Coach', variants: [{ id: 54120408187194, available: true, requires_shipping: true, sku: '', grams: 0 }] };
     let rows = await A.authorStatus(F, world({ catalog: { 10454698754362: prod } }), { all: [S, F] });
     t('bundle found by id in the public catalogue', byCheck(rows, 'bundle product').status, 'DONE');
-    t('no SKU / weight 0 FAILS (runbook §3)', byCheck(rows, 'SKU and weight').status, 'FAIL');
+    falsy('SKU / weight are not checked (IngramSpark ships, 2026-09-29)', rows.some((r) => r.check === 'SKU and weight'));
     truthy('an unrecorded variant is TODO with the exact set command', /--shopifyVariantId 54120408187194/.test(byCheck(rows, 'variant recorded').fix));
     rows = await A.authorStatus(F, world({}), { all: [S, F] });
     truthy('a product missing from the catalogue FAILS', byCheck(rows, 'bundle product').status === 'FAIL');
@@ -3604,8 +3604,8 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   console.log('\nshopify - bundle');
   t('title follows the convention', SH.bundleTitle(R), 'Running on Faith [Rick Meyer] + Your Personal AI Coach');
   t('complete inputs pass', SH.bundleProblems(opts), []);
-  truthy('weight 0 is refused (breaks carrier rates)', SH.bundleProblems({ ...opts, grams: '0' }).some((p) => /weight/.test(p)));
-  truthy('a SKU off the BC<ISBN> convention is refused', SH.bundleProblems({ ...opts, sku: 'RICK1' }).some((p) => /BC<ISBN>/.test(p)));
+  t('SKU and weight are optional', SH.bundleProblems({ coach: R, price: '29.95' }), []);
+  truthy('...but a malformed SKU, if given, is refused', SH.bundleProblems({ ...opts, sku: 'RICK1' }).some((p) => /BC<ISBN>/.test(p)));
   truthy('an author who already has a bundle is refused (create, never edit)', SH.bundleProblems({ ...opts, coach: { ...R, shopifyProductId: '1' } }).some((p) => /never edits/.test(p)));
   {
     const s = fakeShop();
@@ -3614,7 +3614,11 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     t('create, price, publish, collect — in that order',
       s.ops(), ['productCreate', 'productVariantsBulkUpdate', 'publications', 'publishablePublish', 'collections', 'collectionAddProducts']);
     const v = s.calls[1].vars.variants[0];
-    t('price, SKU, weight and shipping are all set', [v.price, v.inventoryItem.sku, v.inventoryItem.requiresShipping, v.inventoryItem.measurement.weight], ['29.95', 'BC9781951648213', true, { value: 450, unit: 'GRAMS' }]);
+    t('price, SKU, weight and shipping are set when given', [v.price, v.inventoryItem.sku, v.inventoryItem.requiresShipping, v.inventoryItem.measurement.weight], ['29.95', 'BC9781951648213', true, { value: 450, unit: 'GRAMS' }]);
+    const s2 = fakeShop();
+    await SH.createBundle(s2.gql, { coach: R, price: '29.95' });
+    const v2 = s2.calls[1].vars.variants[0];
+    t('without them: price + shipping only, no empty SKU or weight sent', [v2.price, v2.inventoryItem], ['29.95', { requiresShipping: true }]);
     t('published to the ONLINE STORE (or the cart link 404s)', s.calls[3].vars.input, [{ publicationId: 'gid://shopify/Publication/1' }]);
   }
   {
