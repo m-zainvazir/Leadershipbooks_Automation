@@ -180,7 +180,7 @@ export function loadConfig({ file = CONFIG_FILE, allowMissing = false } = {}) {
 }
 
 /**
- * A Voiceflow personal key as the Authorization value: "Bearer VF.DM...".
+ * A Voiceflow personal key as the Authorization value: "Bearer vfp_...".
  * Accepts it pasted with or without the "Bearer " prefix; blank stays blank.
  */
 export function bearer(key) {
@@ -211,7 +211,7 @@ export function assertNoSecrets(value) {
   const json = JSON.stringify(value);
   // `pit-` is matched with a length floor so an ordinary word could never trip
   // it — a GHL Private Integration Token is `pit-` plus a UUID.
-  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"ghlApiTokenNew"|"ghlApiTokenOld"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|"vfApiKey"|Bearer VF|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
+  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"ghlApiTokenNew"|"ghlApiTokenOld"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|"vfApiKey"|Bearer VF|vfp_[A-Za-z0-9]|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
     throw new Error(`Refusing to write a value that looks like it contains a credential: ${json.slice(0, 120)}`);
   }
 }
