@@ -28,12 +28,26 @@ books: [
 courses: [
   { title: "Test", url: "https://www.test1122223.com" },
 ],
-    // This page talks to the coach through the Cloudflare Worker. The Voiceflow
-    // key lives in the Worker as a secret and is never sent to the browser, and
-    // the Worker - not this page - decides whose conversation it is, from a
-    // verified session. COACH_CODE is this coach's code in coaches.json.
+    // ---- How this page reaches the coach ----------------------------------
+    //   "auto"   (recommended) - the coach router (Worker) first. If the Worker
+    //            cannot be reached - network error, timeout, or a 5xx - fall
+    //            back to Voiceflow directly with VF_API_KEY + VF_VERSION_ID.
+    //   "worker" - the coach router only. No fallback.
+    //   "direct" - Voiceflow only, with VF_API_KEY + VF_VERSION_ID.
+    CONNECTION: "auto",
+
+    // Coach router: the Worker holds the Voiceflow key as a secret and decides
+    // whose conversation it is. COACH_CODE is this coach's code in coaches.json.
     COACH_CODE: "1043",
-    WORKER_URL: "https://coach-router.bookcoachai.workers.dev"
+    WORKER_URL: "https://coach-router.bookcoachai.workers.dev",
+
+    // Voiceflow direct: used by "direct", and by "auto" as the fallback.
+    // Voiceflow no longer creates per-project keys (after 16 Nov 2026): use a
+    // PERSONAL key, written as "Bearer VF.DM....", and the exact 24-character
+    // version ID - never "production" or "main".
+    // WARNING: this key is readable by anyone who views this page's source.
+    VF_API_KEY: "Bearer ",
+    VF_VERSION_ID: "6a3339b6eb283c59b70cfa53"
   };
 </script>
 
@@ -552,7 +566,10 @@ restartBtn.addEventListener('click', async () => {
   //    conversation do not survive. A launch alone restarts the FLOW but may
   //    leave variables populated.
   try{
-    await workerPost('/api/vf-state', { op: 'reset' });
+    await viaConnection(
+      () => workerPost('/api/vf-state', { op: 'reset' }),
+      () => vfDirect.reset()
+    );
   }catch(e){ console.error('state reset failed', e); }
 
   // 4. Fresh greeting. The identity deliberately survives - same person,
@@ -645,7 +662,9 @@ function getSessionToken(){
     try{
       const res = await fetch(CONFIG.WORKER_URL + '/api/web/session', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(MEMBER)
+        body: JSON.stringify(MEMBER),
+        // A hung Worker must not hold up the fallback - see WORKER_TIMEOUT_MS.
+        signal: AbortSignal.timeout(WORKER_TIMEOUT_MS)
       });
       if(res.status === 403){ _sessionRefused = true; return ''; }
       if(!res.ok) return '';
@@ -665,29 +684,117 @@ function getSessionToken(){
   return _sessionInflight;
 }
 
-// Every coach call goes through here: POST to the Worker with the coach code,
-// the session token (when there is one) and the hint ID.
+/* =========================================================================
+   Connection: coach router (Worker), Voiceflow direct, or router + fallback.
+   CONFIG.CONNECTION picks one; see the CONFIG block at the top.
+   ========================================================================= */
+const CONNECTION = String(CONFIG.CONNECTION || 'auto').toLowerCase();
+const VF_RUNTIME = 'https://general-runtime.voiceflow.com';
+const WORKER_TIMEOUT_MS = 12000;
+
+// Direct mode needs a real personal key and a real version ID. A blank
+// "Bearer " means it is not set up, and "auto" then behaves like "worker".
+const DIRECT_READY = /^Bearer\s+\S+/.test(String(CONFIG.VF_API_KEY || '')) &&
+                     /^[0-9a-f]{24}$/i.test(String(CONFIG.VF_VERSION_ID || ''));
+if(CONNECTION === 'direct' && !DIRECT_READY){
+  console.error('[coach] CONNECTION is "direct" but VF_API_KEY / VF_VERSION_ID are not set - the coach cannot connect.');
+}
+if(CONNECTION === 'auto' && !DIRECT_READY){
+  console.warn('[coach] CONNECTION is "auto" but no VF_API_KEY / VF_VERSION_ID - there is no fallback if the Worker is down.');
+}
+
+// The Worker could not be REACHED: network error, timeout, or a 5xx. Only this
+// triggers the fallback. A 4xx is a decision (not entitled, bad request), and
+// falling back would route around it.
+class WorkerUnreachable extends Error {}
+
+// Every coach-router call goes through here: POST to the Worker with the coach
+// code, the session token (when there is one) and the hint ID.
 async function workerPost(path, body){
   const token = await getSessionToken();
   const payload = Object.assign({ code: CONFIG.COACH_CODE, userID: VF_USER_ID }, body);
   if(token) payload.sessionToken = token;
-  const res = await fetch(CONFIG.WORKER_URL + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let res;
+  try{
+    res = await fetch(CONFIG.WORKER_URL + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(WORKER_TIMEOUT_MS)
+    });
+  }catch(e){
+    throw new WorkerUnreachable('Coach service unreachable: ' + (e && e.message));
+  }
+  if(res.status >= 500) throw new WorkerUnreachable('Coach service responded with status ' + res.status);
   if(!res.ok){
     throw new Error('Coach service responded with status ' + res.status);
   }
   return res.json();
 }
 
+// Voiceflow direct. The version ID is in EVERY path, which a personal key
+// requires, and the key is sent exactly as written in CONFIG ("Bearer ...").
+function vfDirectHeaders(json){
+  const h = { 'Authorization': CONFIG.VF_API_KEY, 'versionID': CONFIG.VF_VERSION_ID };
+  if(json) h['Content-Type'] = 'application/json';
+  return h;
+}
+function vfStateUrl(suffix){
+  return VF_RUNTIME + '/state/' + encodeURIComponent(CONFIG.VF_VERSION_ID) +
+         '/user/' + encodeURIComponent(VF_USER_ID) + (suffix || '');
+}
+const vfDirect = {
+  async interact(action){
+    const res = await fetch(vfStateUrl('/interact'), {
+      method: 'POST',
+      headers: vfDirectHeaders(true),
+      body: JSON.stringify({ action, config: { tts: true } })
+    });
+    if(!res.ok) throw new Error('Voiceflow responded with status ' + res.status);
+    const traces = await res.json();
+    return Array.isArray(traces) ? traces : [];
+  },
+  async getState(){
+    const res = await fetch(vfStateUrl(''), { headers: vfDirectHeaders(false) });
+    if(!res.ok) return null;
+    return res.json();          // already { stack, variables, ... }
+  },
+  async reset(){
+    const res = await fetch(vfStateUrl(''), { method: 'DELETE', headers: vfDirectHeaders(false) });
+    if(!res.ok) throw new Error('Voiceflow responded with status ' + res.status);
+  }
+};
+
+// Once the Worker has failed in "auto", stay direct for the rest of this page
+// load, so every message does not wait out another timeout first.
+let _workerDown = false;
+
+// Runs one coach operation over the chosen connection.
+async function viaConnection(workerFn, directFn){
+  if(CONNECTION === 'direct') return directFn();
+  if(CONNECTION === 'worker' || !DIRECT_READY) return workerFn();
+  if(_workerDown) return directFn();
+  try{
+    return await workerFn();
+  }catch(e){
+    if(!(e instanceof WorkerUnreachable)) throw e;
+    _workerDown = true;
+    console.warn('[coach] ' + e.message + ' - falling back to Voiceflow direct for this visit.');
+    return directFn();
+  }
+}
+
 async function vfInteract(action){
-  // tts:true asks Voiceflow (via the Worker) to render audio using the voice
-  // configured on the project itself (Project Settings > Voice), returned as a
-  // src on each "speak" trace — the natural voice, not a browser voice.
-  const out = await workerPost('/api/vf-interact', { action, tts: true });
-  return (out && Array.isArray(out.traces)) ? out.traces : [];
+  // tts:true asks Voiceflow to render audio using the voice configured on the
+  // project itself (Project Settings > Voice), returned as a src on each
+  // "speak" trace — the natural voice, not a browser voice.
+  return viaConnection(
+    async () => {
+      const out = await workerPost('/api/vf-interact', { action, tts: true });
+      return (out && Array.isArray(out.traces)) ? out.traces : [];
+    },
+    () => vfDirect.interact(action)
+  );
 }
 // Saves this session to the project's Transcripts tab in Voiceflow.
 // Fire-and-forget: if it fails, the chat still works.
@@ -801,9 +908,14 @@ async function launchCoach(){
 // With shared memory on, this history includes the member's texts and calls.
 async function fetchState(){
   try{
-    const out = await workerPost('/api/vf-state', { op: 'get' });
-    if(!out) return null;
-    return { stack: out.live ? [{}] : [], variables: out.memory || {} };
+    return await viaConnection(
+      async () => {
+        const out = await workerPost('/api/vf-state', { op: 'get' });
+        if(!out) return null;
+        return { stack: out.live ? [{}] : [], variables: out.memory || {} };
+      },
+      () => vfDirect.getState()
+    );
   }catch(e){ return null; }
 }
 
