@@ -2769,11 +2769,15 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     const fn = async (url, init = {}) => {
       const u = String(url);
       const method = (init.method || 'GET').toUpperCase();
-      const m = /\/state\/user\/([^/]+)(\/[a-z]+)?$/.exec(u);
-      const userID = m ? decodeURIComponent(m[1]) : null;
-      const tail = m ? m[2] || '' : '';
+      // /state/<version>/user/<id>[/tail] — the version is in the path since
+      // 2026-09-30 (Voiceflow personal keys). The old /state/user/ form is
+      // still parsed so a regression shows up as a missing `version`.
+      const m = /\/state\/(?:([^/]+)\/)?user\/([^/]+)(\/[a-z]+)?$/.exec(u);
+      const version = m && m[1] ? decodeURIComponent(m[1]) : null;
+      const userID = m ? decodeURIComponent(m[2]) : null;
+      const tail = m ? m[3] || '' : '';
       const body = init.body ? JSON.parse(init.body) : null;
-      calls.push({ method, userID, tail, action: body && body.action ? body.action : null });
+      calls.push({ method, version, userID, tail, action: body && body.action ? body.action : null });
       if (method === 'GET' && !tail) return new Response(JSON.stringify({ stack: live ? [{ programID: 'p' }] : [], variables: {} }), { status: 200 });
       if (method === 'POST' && tail === '/interact') {
         const a = body.action || {};
@@ -2839,6 +2843,8 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     t('one interact, and it is a text turn - no launch over a live conversation', i.map((c) => c.action.type), ['text']);
     t('on the web page id', i[0].userID, 'ghl_' + CID);
     truthy('and the member gets the coach reply to what they said', xml.includes('REPLY to Where were we?'));
+    // Voiceflow personal keys need the project named in the path (2026-09-30).
+    truthy('🔑 EVERY Voiceflow call carries the version ID in its path', vf.calls.length > 0 && vf.calls.every((c) => c.version));
     t('the session is still written, pinned to the coach',
       (await env.COACH_KV.get('sess:sms:' + PHONE)).code, '1042');
   }
@@ -3484,12 +3490,19 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     const cfg = A.coachPageConfig(R, { workerUrl: 'https://w' });
     truthy('showActivation is always true — it cannot be forgotten', cfg.includes('showActivation: true,'));
     truthy('talks through the Worker with this code', cfg.includes('COACH_CODE: "1044"') && cfg.includes('WORKER_URL: "https://w"'));
-    falsy('carries no Voiceflow key', /VF_API_KEY|VF\.DM/.test(cfg));
+    falsy('carries no real Voiceflow key', /VF\.DM/.test(cfg));
+    truthy('...only the blank fallback slot, in the personal-key format', cfg.includes('VF_API_KEY: "Bearer ",'));
+    truthy('the freddy-v2 switch, defaulting to auto', cfg.includes('CONNECTION: "auto",'));
+    truthy('an alias versionID becomes the 24-char draft id for the fallback',
+      A.coachPageConfig({ ...R, projectID: '6a52da46bc446f70628c598c', versionID: 'main' }, { workerUrl: 'w' }).includes('VF_VERSION_ID: "6a52da46bc446f70628c598d"'));
+    t('a 24-char versionID is used as-is', A.pageVersionId({ versionID: '6a3339b6eb283c59b70cfa53' }), '6a3339b6eb283c59b70cfa53');
     truthy('the coach label is the page "bookTitle"', cfg.includes('bookTitle: "Faith Coach"'));
     truthy('books render, and showBooks follows them', cfg.includes('{ title: "Running on Faith", url: "https://x/b" }') && cfg.includes('showBooks: true'));
     const tricky = A.coachPageConfig({ ...R, displayName: 'Jo "The" Smith' }, { workerUrl: 'https://w' });
     truthy('quotes in a name are escaped, not a syntax error', tricky.includes('authorName: "Jo \\"The\\" Smith"'));
-    t('gaps listed for what is still empty', A.coachPageGaps({ ...R, books: [] }).length, 3);
+    const gaps = A.coachPageGaps({ ...R, books: [], versionID: '6a3339b6eb283c59b70cfa53' });
+    t('gaps: photo, author link, books, and the key to paste', gaps.length, 4);
+    truthy('...the key is pasted in the GHL editor only', gaps.some((g) => /GHL editor/.test(g)));
 
     const pairs = A.zipifyReplacements(S, { ...R, landingPageUrl: 'https://www.book-coach.ai/rick-meyer-coach-access', shopifyProductId: '9', shopifyVariantId: '8' });
     const finds = pairs.map((p) => p.find);
@@ -3498,6 +3511,36 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     truthy('both spellings of the source author are replaced', finds.includes('Michael Stickler') && finds.includes('Micheal Stickler'));
     truthy('product, variant and funnel link are replaced', ['10434147320122', '54042631733562', 'https://www.book-coach.ai/michael-stickler-coach-access'].every((x) => finds.includes(x)));
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * Voiceflow personal key — one key for every coach (2026-09-30)
+ * ------------------------------------------------------------------------- */
+{
+  const { bearer } = await import('./lib-config.mjs');
+  console.log('\nvoiceflow personal key');
+  t('pasted bare, it becomes a Bearer credential', bearer('VF.DM.abc'), 'Bearer VF.DM.abc');
+  t('pasted with Bearer, it is not doubled', bearer('bearer  VF.DM.abc'), 'Bearer VF.DM.abc');
+  t('blank stays blank (no "Bearer " with nothing after it)', bearer('Bearer '), '');
+
+  const dir = mkdtempSync(join(tmpdir(), 'vfkey-'));
+  const file = join(dir, 'coaches.json');
+  const write = (shared, coaches) => writeFileSync(file, JSON.stringify({ shared, coaches }));
+  write({ vfApiKey: 'VF.DM.personal' }, [{ code: '1', name: 'A', projectID: 'p', vfKey: 'VF.DM.oldproject' }, { code: '2', name: 'B', projectID: 'q' }]);
+  let cs = loadConfig({ file }).coaches;
+  t('the shared personal key serves EVERY coach, over any old project key', cs.map((c) => [c.apiKey, c.keySource]), [['Bearer VF.DM.personal', 'personal'], ['Bearer VF.DM.personal', 'personal']]);
+  write({}, [{ code: '1', name: 'A', projectID: 'p', vfKey: 'VF.DM.oldproject' }]);
+  cs = loadConfig({ file }).coaches;
+  t('without it, the legacy project key is still used (nothing breaks before the switch)', [cs[0].apiKey, cs[0].keySource], ['VF.DM.oldproject', 'project']);
+  rmSync(dir, { recursive: true, force: true });
+
+  truthy('the personal key can never reach KV', (() => { try { assertNoSecrets({ x: 'Bearer VF.DM.personal' }); return false; } catch { return true; } })());
+
+  const { preflightProblems, buildEntry } = await import('./lib-onboard.mjs');
+  const e = buildEntry({ code: '1050', author: 'Jane Smith', book: 'B', slug: 'jane-smith', projectID: 'a'.repeat(24), versionID: 'b'.repeat(24) });
+  falsy('onboard stores no per-coach key when the shared one is in use', 'vfKey' in e);
+  t('...and does not demand one', preflightProblems({ existing: [], entry: e, slug: 'jane-smith', personalKey: 'Bearer VF.DM.p' }), []);
+  truthy('without a shared key it still asks, naming shared.vfApiKey', preflightProblems({ existing: [], entry: e, slug: 'jane-smith' }).some((p) => /shared\.vfApiKey/.test(p)));
 }
 
 /* ---------------------------------------------------------------------------

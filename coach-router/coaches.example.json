@@ -7,6 +7,7 @@
     "publicTwilioNumber": "",
     "workerUrl": "",
     "allowedOrigin": "",
+    "vfApiKey": "",
     "ghlApiToken": "",
     "ghlLocationId": "",
     "shopifyWebhookSecret": "",

@@ -549,6 +549,20 @@ async function clearSession(env, channel, phone) {
  * 7. Voiceflow Dialog API
  * ========================================================================= */
 
+/**
+ * A Voiceflow state URL with the version ID IN THE PATH.
+ *
+ * Voiceflow stops issuing per-project keys after 16 Nov 2026; the replacement
+ * personal key must be told which project to act on, and the version in the
+ * path is how. Verified 2026-09-30: today's project keys accept this form too
+ * (200 for all three coaches, on both the 24-hex ids and the `main` alias), so
+ * the switch is safe before the personal key exists.
+ */
+function vfStatePath(coach, userID, suffix = '') {
+  const version = (coach && coach.versionID) || 'production';
+  return `${VF_RUNTIME}/state/${encodeURIComponent(version)}/user/${encodeURIComponent(userID)}${suffix}`;
+}
+
 function vfHeaders(apiKey, coach) {
   return {
     Authorization: apiKey,
@@ -568,7 +582,7 @@ async function vfInteract(env, coach, userID, action, { config } = {}) {
     throw new HttpError(500, `Secret ${coach.keyVar || '(keyVar missing)'} is not set for coach ${coach.code}`);
   }
 
-  const res = await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}/interact`, {
+  const res = await fetch(vfStatePath(coach, userID, '/interact'), {
     method: 'POST',
     headers: vfHeaders(apiKey, coach),
     body: JSON.stringify({
@@ -628,7 +642,7 @@ async function vfIsLive(env, coach, userID) {
   const apiKey = coachApiKey(env, coach);
   if (!apiKey) return false;
   try {
-    const res = await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}`, {
+    const res = await fetch(vfStatePath(coach, userID), {
       headers: { Authorization: apiKey, versionID: coach.versionID || 'production' },
     });
     if (!res.ok) return false;
@@ -644,7 +658,7 @@ async function vfSetVariables(env, coach, userID, variables) {
   if (!variables || !Object.keys(variables).length) return;
   const apiKey = coachApiKey(env, coach);
   if (!apiKey) return;
-  await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}/variables`, {
+  await fetch(vfStatePath(coach, userID, '/variables'), {
     method: 'PATCH',
     headers: vfHeaders(apiKey, coach),
     body: JSON.stringify(variables),
@@ -1517,7 +1531,7 @@ async function handleVfState(request, env, cors) {
 
   const apiKey = coachApiKey(env, coach);
   if (!apiKey) throw new HttpError(500, `Secret ${coach.keyVar || '(keyVar missing)'} is not set for coach ${coach.code}`);
-  const res = await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}`, {
+  const res = await fetch(vfStatePath(coach, userID), {
     headers: { Authorization: apiKey, versionID: coach.versionID || 'production' },
   });
   const state = res.ok ? await res.json().catch(() => null) : null;
@@ -2292,7 +2306,7 @@ async function deleteVoiceflowState(env, coach, userID) {
   const apiKey = coachApiKey(env, coach);
   if (!apiKey) throw new Error(`no API key for coach ${coach.code}`);
 
-  const res = await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}`, {
+  const res = await fetch(vfStatePath(coach, userID), {
     method: 'DELETE',
     headers: { Authorization: apiKey, versionID: coach.versionID || 'production' },
   });

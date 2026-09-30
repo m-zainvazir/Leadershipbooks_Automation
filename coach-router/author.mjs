@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { loadConfig, HERE } from './lib-config.mjs';
+import { loadConfig, HERE, bearer } from './lib-config.mjs';
 import { saveRegistry, readState } from './lib-registry.mjs';
 import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
@@ -112,6 +112,28 @@ function kvGet(key) {
   } catch {
     return null;
   }
+}
+
+/**
+ * One harmless Voiceflow read per coach — the state of a made-up user, over the
+ * version-in-path URL the Worker uses. Proves the key + version pair without a
+ * billable launch and without touching anyone's conversation.
+ */
+async function probeVoiceflow(list) {
+  const user = `author-check-${Date.now()}`;
+  const out = [];
+  for (const c of list) {
+    const version = c.versionID || 'production';
+    let status = 'no key';
+    if (c.apiKey) {
+      const r = await fetch(`https://general-runtime.voiceflow.com/state/${encodeURIComponent(version)}/user/${user}`, {
+        headers: { Authorization: c.apiKey, versionID: version },
+      }).catch((e) => ({ status: e.message }));
+      status = r.status;
+    }
+    out.push({ code: c.code, name: c.displayName || c.name, version, source: c.keySource || 'none', status, ok: status === 200 });
+  }
+  return out;
 }
 
 const state = readState();
@@ -261,6 +283,14 @@ if (cmd === 'check') {
   }
   console.log('    (write scopes — contacts, products, prices, tags — are not probed: that would mean writing)');
 
+  // Voiceflow: which key each coach resolves to, and whether it answers.
+  const vf = await probeVoiceflow(coaches);
+  console.log(`\n  Voiceflow  (shared personal key: ${bearer(shared.vfApiKey) ? 'set' : 'NOT SET — coaches still use their own project keys'})`);
+  for (const r of vf) console.log(`    ${r.ok ? '✓' : '✗'} ${r.code} ${String(r.name).padEnd(18)} ${r.source.padEnd(9)} @ ${r.version}  ${r.ok ? '' : r.status}`);
+  if (vf.some((r) => /^[a-z]+$/i.test(r.version))) {
+    console.log('    ⚠ a versionID is an alias (main/production) — the personal-key format expects the 24-character version ID');
+  }
+
   const sc = shopifyConfig(shared);
   if (sc.missing.length) {
     console.log(`\n  Shopify: not configured — missing ${sc.missing.join(', ')}`);
@@ -284,6 +314,22 @@ if (cmd === 'check') {
       : '\n  → the new GHL token CANNOT read subscriptions. Do not promote it: the Worker would stop recognising payers.');
   }
   console.log('');
+  process.exit(0);
+}
+
+if (cmd === 'drop-project-keys') {
+  // The last step of the personal-key move: remove every per-coach project key.
+  // Refused unless the shared personal key answers for EVERY coach, because
+  // after this there is no older key to fall back to.
+  if (!bearer(shared.vfApiKey)) die('shared.vfApiKey is empty — paste the personal key first, then npm run author -- check');
+  const vf = await probeVoiceflow(coaches);
+  const bad = vf.filter((r) => !r.ok || r.source !== 'personal');
+  if (bad.length) die(`REFUSING — the personal key does not answer for: ${bad.map((r) => `${r.code} (${r.source} ${r.status})`).join(', ')}. Nothing changed.`);
+  const had = coaches.filter((c) => c.vfKey).map((c) => c.code);
+  if (!had.length) die('No per-coach project keys left — nothing to do.');
+  const { backup } = saveRegistry((doc) => { for (const c of doc.coaches) delete c.vfKey; }, { label: 'drop-project-keys' });
+  console.log(`\n  Removed the project key from ${had.join(', ')} — every coach now uses the shared personal key (backup: ${backup}).`);
+  console.log('  Next: npm run push   (the Worker switches), then npm run verify:vf\n');
   process.exit(0);
 }
 
@@ -370,4 +416,4 @@ if (cmd === 'shopify') {
   process.exit(0);
 }
 
-die(`unknown command "${cmd}". Use: (none) | status | set | config | check | promote-ghl-token | page | zipify | shopify`);
+die(`unknown command "${cmd}". Use: (none) | status | set | config | check | promote-ghl-token | drop-project-keys | page | zipify | shopify`);

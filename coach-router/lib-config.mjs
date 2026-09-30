@@ -139,6 +139,12 @@ export function loadConfig({ file = CONFIG_FILE, allowMissing = false } = {}) {
 
   const shared = parsed.shared || {};
   const list = Array.isArray(parsed.coaches) ? parsed.coaches : [];
+  // ONE Voiceflow personal key for every coach (shared.vfApiKey). Voiceflow
+  // stops issuing per-project keys after 16 Nov 2026. A personal key is sent as
+  // a Bearer credential, and each coach still names its own project through its
+  // versionID. A per-coach `vfKey` is the legacy project key, used only while
+  // no personal key is set.
+  const personalKey = bearer(shared.vfApiKey);
 
   const coaches = list.map((c, i) => {
     const code = String(c.code ?? '').trim();
@@ -153,7 +159,9 @@ export function loadConfig({ file = CONFIG_FILE, allowMissing = false } = {}) {
       // Derived, not authored: the Worker looks up this secret name at runtime.
       keyVar,
       // A real environment variable wins, so CI can inject without the file.
-      apiKey: process.env[keyVar] || c.vfKey || '',
+      // Then the shared personal key, then the legacy per-coach project key.
+      apiKey: process.env[keyVar] || personalKey || c.vfKey || '',
+      keySource: process.env[keyVar] ? 'env' : personalKey ? 'personal' : c.vfKey ? 'project' : '',
       // GHL stores tags lowercased, so a tag typed here with capitals would
       // never match what the contacts/search filter returns. Normalise rather
       // than warn — the failure it prevents is silent (zero contacts matched).
@@ -169,6 +177,17 @@ export function loadConfig({ file = CONFIG_FILE, allowMissing = false } = {}) {
   });
 
   return { shared, coaches, missing: false };
+}
+
+/**
+ * A Voiceflow personal key as the Authorization value: "Bearer VF.DM...".
+ * Accepts it pasted with or without the "Bearer " prefix; blank stays blank.
+ */
+export function bearer(key) {
+  // `(\s+|$)`: a bare "Bearer " placeholder trims to "Bearer", which must read
+  // as blank — not become the key "Bearer Bearer" pushed to every coach.
+  const k = String(key || '').trim().replace(/^bearer(\s+|$)/i, '').trim();
+  return k ? `Bearer ${k}` : '';
 }
 
 /**
@@ -192,7 +211,7 @@ export function assertNoSecrets(value) {
   const json = JSON.stringify(value);
   // `pit-` is matched with a length floor so an ordinary word could never trip
   // it — a GHL Private Integration Token is `pit-` plus a UUID.
-  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"ghlApiTokenNew"|"ghlApiTokenOld"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
+  if (/VF\.DM|"vfKey"|"apiKey"|"ghlApiToken"|"ghlApiTokenNew"|"ghlApiTokenOld"|"shopifyWebhookSecret"|"flowSharedSecret"|"shopifyClientSecret"|"vfApiKey"|Bearer VF|shpss_|shpat_|sk-|AC[0-9a-f]{32}|pit-[0-9a-f-]{30,}/i.test(json)) {
     throw new Error(`Refusing to write a value that looks like it contains a credential: ${json.slice(0, 120)}`);
   }
 }

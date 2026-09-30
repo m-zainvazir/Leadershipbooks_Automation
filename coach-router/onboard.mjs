@@ -39,7 +39,7 @@
  * Plan: ../ghl-shopify subscription/plans/21-onboarding-automation.md §B
  */
 
-import { loadConfig, runtimeConfig } from './lib-config.mjs';
+import { loadConfig, runtimeConfig, bearer } from './lib-config.mjs';
 import { saveRegistry } from './lib-registry.mjs';
 import {
   buildEntry,
@@ -120,8 +120,11 @@ if (!versionID && page && page.versionID) { versionID = page.versionID; versionF
 let projectFrom = projectID ? '--project' : '';
 if (!projectID && page && page.projectID) { projectID = page.projectID; projectFrom = 'page'; }
 if (!projectID && versionID && projectFromVersion(versionID)) { projectID = projectFromVersion(versionID); projectFrom = 'derived from versionID - 1'; }
-const vfKey = envKey || (page && page.vfKey) || '';
-const keyFrom = envKey ? `env VF_KEY_${code}` : vfKey ? 'page source (legacy direct page)' : '';
+// The shared personal key (shared.vfApiKey) serves every coach, so a new
+// author needs no key of its own. A per-coach key is only the legacy fallback.
+const personalKey = bearer(shared.vfApiKey);
+const vfKey = personalKey ? '' : envKey || (page && page.vfKey) || '';
+const keyFrom = personalKey ? 'shared personal key (all coaches)' : envKey ? `env VF_KEY_${code}` : vfKey ? 'page source (legacy direct page)' : '';
 
 /* ---------------------------------------------------------------- preflight --- */
 
@@ -137,7 +140,7 @@ const entry = buildEntry({
 });
 const label = valOf('--label');
 
-const problems = preflightProblems({ existing, entry, slug });
+const problems = preflightProblems({ existing, entry, slug, personalKey });
 
 /** GHL client. Throws on anything that is not 2xx, naming the call. */
 async function ghl(path, { method = 'GET', body = null } = {}) {
@@ -187,7 +190,7 @@ if (page) {
 }
 console.log(`  versionID       ${entry.versionID || '(unknown)'}${versionFrom ? `  [${versionFrom}]` : ''}`);
 console.log(`  projectID       ${entry.projectID || '(unknown)'}${projectFrom ? `  [${projectFrom}]` : ''}`);
-console.log(`  Voiceflow key   ${vfKey ? `present  [${keyFrom}]` : 'MISSING'}`);
+console.log(`  Voiceflow key   ${personalKey || vfKey ? `present  [${keyFrom}]` : 'MISSING'}`);
 console.log(`  ghlTag          ${entry.ghlTag}`);
 console.log(`  GHL product     ${inspection && inspection.product ? `adopt ${inspection.product._id}` : `create "${names.product}"`}`);
 console.log(`  GHL price       ${inspection && inspection.price ? `adopt ${inspection.price._id}` : `create "${names.price}" — $59 USD, monthly`}`);

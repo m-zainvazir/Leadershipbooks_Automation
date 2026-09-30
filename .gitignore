@@ -39,3 +39,7 @@ node_modules/
 .wrangler/
 .DS_Store
 Thumbs.db
+
+# Coach page sources. They carry a Voiceflow key once filled in (the CONFIG
+# fallback), so they stay local - never committed. Decided 2026-09-30.
+/ghl-shopify subscription/freddy-v2

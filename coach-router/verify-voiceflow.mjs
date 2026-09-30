@@ -103,7 +103,7 @@ async function probe(coach, apiKey) {
     versionID: coach.versionID || 'production',
   };
 
-  const res = await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}/interact`, {
+  const res = await fetch(`${VF_RUNTIME}/state/${encodeURIComponent(coach.versionID || 'production')}/user/${encodeURIComponent(userID)}/interact`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -124,7 +124,7 @@ async function probe(coach, apiKey) {
   if (!KEEP && res.ok) {
     // Leave no probe state behind, so the first real subscriber on this coach
     // gets a genuine first turn rather than resuming the preflight.
-    await fetch(`${VF_RUNTIME}/state/user/${encodeURIComponent(userID)}`, { method: 'DELETE', headers })
+    await fetch(`${VF_RUNTIME}/state/${encodeURIComponent(coach.versionID || 'production')}/user/${encodeURIComponent(userID)}`, { method: 'DELETE', headers })
       .catch(() => {});
   }
 
@@ -177,7 +177,7 @@ for (const coach of coaches) {
   console.log(`  key        ${coach.keyVar} found (${apiKey.length} chars)`);
 
   if (DRY) {
-    console.log(`  DRY        would POST ${VF_RUNTIME}/state/user/verify-preflight-${coach.code}/interact`);
+    console.log(`  DRY        would POST ${VF_RUNTIME}/state/${coach.versionID || 'production'}/user/verify-preflight-${coach.code}/interact`);
     console.log(`             with header versionID: ${version}\n`);
     continue;
   }

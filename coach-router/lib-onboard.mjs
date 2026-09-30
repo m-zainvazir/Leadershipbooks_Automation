@@ -138,7 +138,8 @@ export function buildEntry(o) {
     aliases: o.aliases && o.aliases.length ? o.aliases : defaultAliases(name, o.author),
     projectID: o.projectID,
     versionID: o.versionID,
-    vfKey: o.vfKey,
+    // Omitted when the shared personal key is in use: no per-coach key to store.
+    ...(o.vfKey ? { vfKey: o.vfKey } : {}),
     voiceMode: 'inline',
     ttsVoice: o.ttsVoice || 'Polly.Matthew-Neural',
     ghlTag: c.ghlTag,
@@ -157,7 +158,7 @@ export function buildEntry(o) {
  * Deliberately refuses an existing code rather than editing it. Creating a
  * second $59 product by accident is worse than typing the command twice.
  */
-export function preflightProblems({ existing = [], entry, slug }) {
+export function preflightProblems({ existing = [], entry, slug, personalKey = '' }) {
   const p = [];
   if (!SLUG_RE.test(String(slug || ''))) {
     p.push(`--slug "${slug}" must be lowercase words joined by hyphens, e.g. jane-smith`);
@@ -183,8 +184,10 @@ export function preflightProblems({ existing = [], entry, slug }) {
   if (!/^([0-9a-f]{24}|main|production|development)$/i.test(entry.versionID || '')) {
     p.push(`versionID "${entry.versionID || ''}" is neither a 24-hex id nor a Voiceflow alias — pass --version`);
   }
-  if (!entry.vfKey) {
-    p.push(`no Voiceflow key — set VF_KEY_${entry.code} in the environment (keys are never taken as arguments)`);
+  if (personalKey) {
+    // One shared personal key serves every coach; a per-coach key is not needed.
+  } else if (!entry.vfKey) {
+    p.push(`no Voiceflow key — set shared.vfApiKey (the personal key, all coaches) in coaches.json, or VF_KEY_${entry.code} in the environment`);
   } else if (!/^VF\.DM\./.test(entry.vfKey)) {
     p.push(`the Voiceflow key does not start with VF.DM. — that is not a Dialog Manager API key`);
   }
