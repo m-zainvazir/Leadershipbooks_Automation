@@ -157,6 +157,15 @@ for (const coach of coaches) {
   if (heygenInUse && !coach.heygenAvatarID) {
     console.warn(`  ! ${where}: no heygenAvatarID — the web avatar page will not start for this coach.`);
   }
+  // A Voiceflow PERSONAL key names the project by the version ID in the path,
+  // and rejects an alias there (verified 2026-09-30: `main` -> 400, the 24-char
+  // ids -> 200). Pushing in that state would take this coach offline.
+  if (coach.keySource === 'personal' && !/^[0-9a-f]{24}$/i.test(String(coach.versionID || ''))) {
+    problems.push(
+      `${where}: versionID "${coach.versionID}" is an alias, and the shared personal key needs the ` +
+        `24-character version ID (Voiceflow answers 400 for an alias). Set the real id before pushing.`,
+    );
+  }
   if (!coach.apiKey) {
     console.warn(`  ! ${where}: no vfKey — KV can still be seeded, but the coach cannot answer until the secret exists (node sync-secrets.mjs --write).`);
   }

@@ -53,6 +53,7 @@ export const RECORD_FIELDS = {
   trialDays: 'whole days, 1-90',
   aliases: 'comma-separated names a caller might say',
   bookTitle: 'the book\'s real title',
+  versionID: 'the Voiceflow version ID, 24 hex characters (the personal key rejects aliases like main)',
   displayName: 'the customer-facing spelling',
 };
 
@@ -69,6 +70,8 @@ export function parseRecordValue(field, raw) {
       const v = gid ? gid[1] : s;
       return /^\d+$/.test(v) ? [v, null] : [null, `${field} must be digits`];
     }
+    case 'versionID':
+      return /^[0-9a-f]{24}$/i.test(s) ? [s.toLowerCase(), null] : [null, 'versionID must be the 24-character Voiceflow version ID — an alias like main is rejected by the personal key'];
     case 'ghlPriceId':
       return /^[0-9a-f]{24}$/i.test(s) ? [s, null] : [null, 'ghlPriceId must be 24 hex characters'];
     case 'trialDays': {
