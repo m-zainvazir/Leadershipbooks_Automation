@@ -52,7 +52,12 @@ const IS_WIN = process.platform === 'win32';
 // Flow adds its own latency on top of GHL's ~20 s search lag.
 const SEARCH_TIMEOUT_MS = SHOP ? 300_000 : 120_000;
 const POLL_MS = 5_000;
-const EMAIL_GRACE_MS = 60_000;
+// How long the test contact lives before cleanup, so the welcome email, the
+// Course360 invite and a look at the course all have time. 5 minutes by
+// default (M, 2026-10-01: "give it at least five minutes to breathe");
+// --wait <seconds> overrides.
+const waitArg = Number(valOf('--wait'));
+const EMAIL_GRACE_MS = (Number.isFinite(waitArg) && waitArg >= 0 ? waitArg : 300) * 1000;
 
 const die = (msg) => {
   console.error(`\n${msg}\n`);
@@ -256,7 +261,9 @@ if (shopOrder) {
 // the Course360 grant are workflow actions on this contact, and a contact
 // deleted first gets neither — which would look like a broken email.
 if (contact && !KEEP && !has('--no-wait')) {
-  console.log(`\n  waiting ${EMAIL_GRACE_MS / 1000}s so GHL sends the welcome email before cleanup (--no-wait skips)…`);
+  const mins = Math.round(EMAIL_GRACE_MS / 6000) / 10;
+  console.log(`\n  contact ${contact.id} stays for ${mins} min before cleanup (--wait <seconds> to change, --no-wait to skip).`);
+  console.log(`  Check ${email} now: the welcome email and the Course360 invite. The course link works until cleanup.`);
   await sleep(EMAIL_GRACE_MS);
 }
 
@@ -282,7 +289,8 @@ const failed = rows.filter((r) => r.status === 'FAIL').length;
 const warned = rows.filter((r) => r.status === 'WARN').length;
 console.log(`\n${formatTable(rows)}\n`);
 console.log(`  ${failed ? `FAILED — ${failed} check(s)` : 'PASSED'}${warned ? `, ${warned} warning(s) (registry values not filled in yet)` : ''}`);
-console.log(`\n  Now check ${email}: the welcome email should name ${coach.displayName || coach.name} and link to their lesson.`);
+console.log(`\n  Emails went to ${email}: the welcome email should name ${coach.displayName || coach.name} and link to their lesson.`);
+if (contact && !KEEP) console.log('  The Course360 login link in those emails no longer works: its contact was deleted by cleanup. That is expected.');
 console.log(`\n  ${SHOP ? LIMITS_NOTICE_ORDER : LIMITS_NOTICE}\n`);
 // Feeds the "Tested" column of `npm run author`. Local and gitignored.
 recordVerify(coach.code, { at: new Date().toISOString(), passed: !failed, warnings: warned, via: SHOP ? 'shopify-order' : 'endpoint' });
