@@ -3564,6 +3564,121 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
 }
 
 /* ---------------------------------------------------------------------------
+ * My Coaches — one course for every author (plans/20 §4.6)
+ * ------------------------------------------------------------------------- */
+{
+  const worker = (await import('./coach-router.worker.js')).default;
+  const { MEMBER_TAG } = __test;
+  const URL_MC = 'https://login.leadershipbookspublishers.com/courses/products/mycoaches';
+  const FREDDY = { name: 'Freddy Davis', displayName: 'Freddy Davis', slug: 'freddy-davis', bookTitle: 'The Truth Mirage', coachLabel: 'Worldview Coach',
+    ghlTag: 'bookcoach-freddy-davis-active', shopifyProductId: '555', keyVar: 'VF_KEY_1043', projectID: 'a'.repeat(24), versionID: 'b'.repeat(24) };
+  const mkEnv = async (config) => {
+    __resetCaches();
+    const kv = fakeKV();
+    await kv.put('coach:1043', JSON.stringify(FREDDY));
+    await kv.put('config', JSON.stringify({ leaseHours: 48, archiveRetentionDays: 30, ...config }));
+    return { COACH_KV: kv, GHL_API_TOKEN: 'pit-x', GHL_LOCATION_ID: 'loc', ALLOWED_ORIGIN: 'https://www.book-coach.ai', FLOW_SHARED_SECRET: 's3cret' };
+  };
+  const withGhl = async (respond, fn) => {
+    const calls = [];
+    const real = globalThis.fetch;
+    globalThis.fetch = async (url, init = {}) => {
+      const body = init.body ? JSON.parse(init.body) : null;
+      calls.push({ url: String(url), method: init.method || 'GET', body });
+      return respond(String(url), init, body);
+    };
+    try { await fn(); } finally { globalThis.fetch = real; }
+    return calls;
+  };
+  const order = () => new Request('https://w.dev/shopify/order', {
+    method: 'POST', headers: { 'X-Coach-Token': 's3cret', 'content-type': 'application/json' },
+    body: JSON.stringify({ order_id: '900', order_number: '#900', email: 'reader@x.com', line_items: [{ product_id: '555' }], source: 'shopify_flow_manual' }),
+  });
+  const ghlNew = (url, init) => {
+    if (url.includes('/contacts/search')) return new Response(JSON.stringify({ contacts: [] }), { status: 200 });
+    if (url.endsWith('/contacts/') && init.method === 'POST') return new Response(JSON.stringify({ contact: { id: 'C9', tags: [] } }), { status: 200 });
+    return new Response('{}', { status: 200 });
+  };
+  const putOf = (calls) => calls.find((c) => c.method === 'PUT');
+  const linkOf = (put) => (put.body.customFields.find((f) => f.key === 'coach_link') || {}).field_value;
+
+  console.log('\nmy coaches - the switch');
+  {
+    const env = await mkEnv({ myCoaches: 'off' });
+    const calls = await withGhl(ghlNew, () => __test.handleShopifyOrder(order(), env, null));
+    falsy('off: a trial adds NO coach-member tag (nothing changes)', putOf(calls).body.tags.includes(MEMBER_TAG));
+    t('off: no lesson link when the author has no course', linkOf(putOf(calls)), undefined);
+  }
+  {
+    const env = await mkEnv({ myCoaches: 'on', myCoachesUrl: URL_MC });
+    const calls = await withGhl(ghlNew, () => __test.handleShopifyOrder(order(), env, null));
+    const put = putOf(calls);
+    truthy('on: a trial adds coach-member, so the ONE grant workflow fires', put.body.tags.includes(MEMBER_TAG));
+    truthy('...alongside the coach tag and the trial trigger', put.body.tags.includes('bookcoach-freddy-davis-active') && put.body.tags.includes('coach-trial-started'));
+    t('on: an author with no own course links to My Coaches', linkOf(put), URL_MC);
+  }
+  {
+    const env = await mkEnv({ myCoaches: 'on', myCoachesUrl: URL_MC });
+    await env.COACH_KV.put('coach:1043', JSON.stringify({ ...FREDDY, courseLessonUrl: 'https://login.x/own-course' }));
+    __resetCaches();
+    const calls = await withGhl(ghlNew, () => __test.handleShopifyOrder(order(), env, null));
+    t('an author who keeps their own course still links to it', linkOf(putOf(calls)), 'https://login.x/own-course');
+  }
+  t('on without a URL is refused by seed', configProblems(runtimeConfig({ config: { myCoaches: 'on' } })).some((p) => /myCoachesUrl is empty/.test(p)), true);
+  t('a builder URL is refused', configProblems(runtimeConfig({ config: { myCoachesUrl: 'https://app.coursecreator360.com/x' } })).some((p) => /MEMBER lesson URL/.test(p)), true);
+  t('ships off', runtimeConfig({}).myCoaches, 'off');
+
+  console.log('\nmy coaches - the tooling');
+  {
+    const A = await import('./lib-author.mjs');
+    const { remainingSteps } = await import('./lib-onboard.mjs');
+    const coach = { ...FREDDY, code: '1043' };
+    const ctx = (workflows) => ({
+      locationId: 'L', cfg: { myCoaches: 'on', myCoachesUrl: URL_MC },
+      fetchText: async (u) => ({ status: u === URL_MC ? 200 : 404, text: '' }),
+      catalog: async () => new Map(), ghl: async (p) => (p.startsWith('/workflows/') ? { workflows } : { contacts: [] }),
+      health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null,
+    });
+    let rows = await A.authorStatus(coach, ctx([{ name: 'Book Coach — Grant My Coaches', status: 'published' }]), { all: [coach] });
+    t('step 4: an author with no course is served by the shared one', rows.find((r) => r.step === 4).status, 'DONE');
+    t('step 6: the ONE shared workflow, published, is DONE', rows.find((r) => r.step === 6).check, 'shared My Coaches grant workflow published');
+    rows = await A.authorStatus(coach, ctx([{ name: 'Book Coach — Grant My Coaches', status: 'draft' }]), { all: [coach] });
+    t('...a draft shared workflow FAILS', rows.find((r) => r.step === 6).status, 'FAIL');
+    const steps = remainingSteps({ entry: { ...coach, ghlProductId: 'P' }, slug: 'freddy-davis', priceId: 'X', sharedCourse: true });
+    falsy('onboard no longer asks for a per-author course or grant workflow', /Offer FREE|Grant Course \(/.test(steps));
+    truthy('...the classic checklist is unchanged without it', /Offer FREE/.test(remainingSteps({ entry: { ...coach, ghlProductId: 'P' }, slug: 'freddy-davis', priceId: 'X' })));
+  }
+
+  console.log('\nmy coaches - POST /api/my-coaches');
+  const ask = async (env, email, contactTags) => {
+    let res;
+    await withGhl((url) => (url.includes('/contacts/C1')
+      ? new Response(JSON.stringify({ contact: { id: 'C1', email: 'me+books@x.com', tags: contactTags } }), { status: 200 })
+      : new Response('{}', { status: 200 })), async () => {
+      res = await worker.fetch(new Request('https://w.dev/api/my-coaches', {
+        method: 'POST', headers: { 'content-type': 'application/json', Origin: 'https://www.book-coach.ai' },
+        body: JSON.stringify({ contactId: 'C1', email }),
+      }), env, {});
+    });
+    return { status: res.status, body: await res.json() };
+  };
+  {
+    const env = await mkEnv({});
+    const r = await ask(env, 'me books@x.com', ['bookcoach-freddy-davis-active']);
+    t('a member holding the tag sees that coach (with the "+" email fix)', [r.status, r.body.coaches.map((c) => c.code)], [200, ['1043']]);
+    t('the card carries the page link and display fields', r.body.coaches[0], {
+      code: '1043', authorName: 'Freddy Davis', label: 'Worldview Coach', authorPhotoURL: '', authorInitials: 'FD', pageUrl: 'https://www.book-coach.ai/freddy-davis',
+    });
+    falsy('🔑 no project/version ids, GHL tag or key name in the answer', /aaaa|bbbb|bookcoach-|VF_KEY|555/.test(JSON.stringify(r.body)));
+  }
+  {
+    const env = await mkEnv({});
+    t('no coach tag -> an empty list, not an error', (await ask(env, 'me+books@x.com', [])).body.coaches, []);
+    t('a different email is refused', (await ask(env, 'someone@x.com', ['bookcoach-freddy-davis-active'])).status, 403);
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * Voiceflow personal key — one key for every coach (2026-09-30)
  * ------------------------------------------------------------------------- */
 {

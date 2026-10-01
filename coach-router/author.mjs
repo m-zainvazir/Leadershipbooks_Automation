@@ -19,7 +19,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { loadConfig, HERE, bearer } from './lib-config.mjs';
+import { loadConfig, HERE, bearer, runtimeConfig } from './lib-config.mjs';
 import { saveRegistry, readState } from './lib-registry.mjs';
 import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
@@ -138,6 +138,7 @@ async function probeVoiceflow(list) {
 
 const state = readState();
 const ctx = () => ({
+  cfg: runtimeConfig(shared),
   fetchText, catalog, ghl, health, kvGet, locationId: shared.ghlLocationId,
   lastVerify: (code) => state[code] && state[code].lastVerify,
 });

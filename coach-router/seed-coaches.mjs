@@ -196,7 +196,9 @@ for (const coach of coaches) {
   if (!coach.bookTitle) {
     console.warn(`  ! ${where}: no bookTitle — the day-9 and day-10 emails have nothing to put in {{contact.coach_book_title}} and will render a gap.`);
   }
-  if (!coach.courseLessonUrl) {
+  // With the shared My Coaches course on, an author needs no course of their own.
+  const shared_ = runtimeConfig(shared);
+  if (!coach.courseLessonUrl && !(shared_.myCoaches === 'on' && shared_.myCoachesUrl)) {
     console.warn(`  ! ${where}: no courseLessonUrl — trial emails have no route to an activation code, which is the whole onboarding path.`);
   }
 }

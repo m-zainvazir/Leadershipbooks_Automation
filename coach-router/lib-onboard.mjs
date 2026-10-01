@@ -349,7 +349,7 @@ export async function applyGhl({ ghl, locationId, entry, inspection }) {
 }
 
 /** The manual steps still left, filled in with this author's exact values. */
-export function remainingSteps({ entry, slug, label, priceId }) {
+export function remainingSteps({ entry, slug, label, priceId, sharedCourse = false }) {
   const c = slugConventions(slug);
   const a = entry.displayName;
   const lines = [
@@ -364,11 +364,18 @@ export function remainingSteps({ entry, slug, label, priceId }) {
     `                     VF_PROJECT_ID: "${entry.projectID}", showActivation: true`,
     `  3  Shopify         "${entry.bookTitle} [${a}] + Your Personal AI Coach", $29.95, SKU BC<ISBN>, real weight`,
     `                     -> add "shopifyProductId" to coaches.json`,
-    `  4  Course360       "BookCoach AI — ${a} — ${label || entry.bookTitle}", ONE lesson, Offer FREE, not listed`,
-    `                     iframe src: ${c.iframeSrc}`,
-    `                     -> add the MEMBER lesson URL as "courseLessonUrl" (strip everything from ?)`,
-    `  6  Grant workflow  "Book Coach — Grant Course (${a})": Contact Tag added = ${entry.ghlTag}`,
-    `                     -> Grant Offer -> PUBLISH before the first order`,
+    // With the shared My Coaches course on (config.myCoaches), steps 4 and 6
+    // are already done for every author: nothing per-author in Course360.
+    ...(sharedCourse ? [
+      `  4  Course360       nothing to do — served by the shared My Coaches course`,
+      `  6  Grant workflow  nothing to do — the one coach-member workflow covers every author`,
+    ] : [
+      `  4  Course360       "BookCoach AI — ${a} — ${label || entry.bookTitle}", ONE lesson, Offer FREE, not listed`,
+      `                     iframe src: ${c.iframeSrc}`,
+      `                     -> add the MEMBER lesson URL as "courseLessonUrl" (strip everything from ?)`,
+      `  6  Grant workflow  "Book Coach — Grant Course (${a})": Contact Tag added = ${entry.ghlTag}`,
+      `                     -> Grant Offer -> PUBLISH before the first order`,
+    ]),
     `  8  Funnel page     clone the $59 funnel to /${slug}-coach-access`,
     `                     order form -> product ${entry.ghlProductId}, price ${priceId}`,
     `  9  Zipify page     cart link https://leadershipbooks.com/cart/<VARIANT_ID>:1`,

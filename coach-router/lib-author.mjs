@@ -248,8 +248,17 @@ export async function authorStatus(coach, ctx, { all = [], deep = false } = {}) 
     }
   });
 
+  // With the shared My Coaches course on, an author without their own course is
+  // served by it: steps 4 and 6 check the ONE shared course and workflow.
+  const sharedCourse = !coach.courseLessonUrl && ctx.cfg && ctx.cfg.myCoaches === 'on' && ctx.cfg.myCoachesUrl;
+
   // 4 — Course360 ------------------------------------------------------------
-  await safe(4, 'Course360 lesson', async () => {
+  if (sharedCourse) await safe(4, 'Course360 lesson', async () => {
+    const r = await ctx.fetchText(ctx.cfg.myCoachesUrl);
+    rows.push(row(4, 'served by the shared My Coaches course', r.status === 200 ? 'DONE' : 'FAIL', `${r.status} ${ctx.cfg.myCoachesUrl}`,
+      r.status === 200 ? '' : 'config.myCoachesUrl does not answer'));
+  });
+  else await safe(4, 'Course360 lesson', async () => {
     if (!coach.courseLessonUrl) return rows.push(row(4, 'lesson URL', 'TODO', 'no courseLessonUrl', `npm run author -- set --code ${coach.code} --courseLessonUrl <member url>`));
     const r = await ctx.fetchText(coach.courseLessonUrl);
     rows.push(row(4, 'lesson URL', r.status === 200 ? 'DONE' : 'FAIL', `${r.status} ${coach.courseLessonUrl}`));
@@ -280,6 +289,16 @@ export async function authorStatus(coach, ctx, { all = [], deep = false } = {}) 
     } catch (err) {
       if (!/401/.test(err.message)) throw err;
       return rows.push(row(6, 'grant workflow published', 'MANUAL', '', 'the GHL token has no workflows.readonly scope'));
+    }
+    if (sharedCourse) {
+      // ONE workflow for everyone: Contact Tag added = coach-member -> Grant the My Coaches Offer.
+      const mc = list.filter((w) => /grant\s+my\s+coaches/i.test(w.name || ''));
+      const live = mc.filter((w) => w.status === 'published');
+      return rows.push(live.length
+        ? row(6, 'shared My Coaches grant workflow published', 'DONE', live.map((w) => w.name).join(', '))
+        : row(6, 'shared My Coaches grant workflow published', mc.length ? 'FAIL' : 'TODO',
+          mc.length ? `"${mc[0].name}" is ${mc[0].status}` : 'no workflow named "Book Coach — Grant My Coaches"',
+          'Contact Tag added = coach-member -> Grant the My Coaches Offer -> PUBLISH'));
     }
     const names = [coach.displayName, coach.name].filter(Boolean).map((n) => n.toLowerCase());
     const hits = list.filter((w) => /^book coach\s*[—-]+\s*grant course\s*\(/i.test(w.name || '') && names.some((n) => w.name.toLowerCase().includes(`(${n})`)));

@@ -306,6 +306,19 @@ export const CONFIG_DEFAULTS = {
   // A coach's own `sharedMemory: true|false` in coaches.json overrides this.
   // Reversible: switching off returns to the `phone:` conversation, untouched.
   sharedMemory: 'off',
+  // ONE "My Coaches" Course360 course for every author (plans/20 §4.6), instead
+  // of a course + Offer + grant workflow per author.
+  //
+  //   off - per-author courses only (the shipped default; nothing changes)
+  //   on  - the Worker also adds the generic `coach-member` tag on every trial
+  //         and every recognised subscription, and the ONE grant workflow
+  //         ("coach-member" added -> Grant the My Coaches Offer) does the rest.
+  //         Coaches without their own courseLessonUrl link to myCoachesUrl.
+  //
+  // Turn on only after the course, its Offer and that workflow exist in GHL.
+  myCoaches: 'off',
+  // The MEMBER lesson URL of the My Coaches course (login.*, no query string).
+  myCoachesUrl: '',
 };
 
 export const ENTITLEMENT_MODES = new Set(['off', 'warn', 'enforce']);
@@ -364,6 +377,18 @@ export function configProblems(cfg) {
   }
   if (!TRIAL_EXPIRY_MODES.has(cfg.trialExpiryMode)) {
     p.push(`config.trialExpiryMode "${cfg.trialExpiryMode}" must be one of: ${[...TRIAL_EXPIRY_MODES].join(', ')}`);
+  }
+  if (cfg.myCoaches !== 'on' && cfg.myCoaches !== 'off') {
+    p.push(`config.myCoaches "${cfg.myCoaches}" must be "on" or "off"`);
+  }
+  if (cfg.myCoachesUrl && !/^https:\/\/\S+$/.test(cfg.myCoachesUrl)) {
+    p.push('config.myCoachesUrl must be an https:// URL');
+  }
+  if (cfg.myCoachesUrl && /is_preview=true|app\.coursecreator360\.com/.test(cfg.myCoachesUrl)) {
+    p.push('config.myCoachesUrl must be the MEMBER lesson URL (login.*), not the builder or a preview link');
+  }
+  if (cfg.myCoaches === 'on' && !cfg.myCoachesUrl) {
+    p.push('config.myCoaches is "on" but config.myCoachesUrl is empty — trial emails would have no lesson link');
   }
   if (cfg.sharedMemory !== 'on' && cfg.sharedMemory !== 'off') {
     p.push(`config.sharedMemory "${cfg.sharedMemory}" must be "on" or "off"`);

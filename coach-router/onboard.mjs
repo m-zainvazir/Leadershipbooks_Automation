@@ -242,5 +242,5 @@ try {
   die(`${err.message}\n\nThe GHL product ${made.ghlProductId} and price ${made.ghlPriceId} exist; fix the problem and re-run with --ghl-product ${made.ghlProductId}.`);
 }
 
-console.log(`\n${remainingSteps({ entry, slug, label, priceId: made.ghlPriceId })}\n`);
+console.log(`\n${remainingSteps({ entry, slug, label, priceId: made.ghlPriceId, sharedCourse: runtimeConfig(shared).myCoaches === 'on' && !!runtimeConfig(shared).myCoachesUrl })}\n`);
 console.log('Not pushed. Review the entry in coaches.json, then: npm run push\n');

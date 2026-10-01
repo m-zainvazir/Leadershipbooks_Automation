@@ -2517,7 +2517,8 @@ async function applySubscriptionTags(env, cfg, entitled) {
     }
 
     try {
-      await ghlAddTags(env, contactId, tags);
+      // A paying subscriber reaches the course the same way a trial does.
+      await ghlAddTags(env, contactId, myCoachesOn(cfg) ? [...tags, MEMBER_TAG] : tags);
       out.tagged += tags.length;
 
       // Without this the day-7 and day-9 emails keep selling the subscription
@@ -2918,6 +2919,52 @@ async function handleBindMint(request, env, cors) {
 }
 
 /**
+ * POST /api/my-coaches — body { contactId, email }.
+ *
+ * The shared "My Coaches" page (plans/20 §4.6) asks: which coaches does this
+ * member hold right now? Verified exactly like /api/bind/mint — the contact's
+ * email must match — and answered from codesForContact, the same union of the
+ * published entitlement map and a LIVE tag read that activation uses, so a
+ * brand-new buyer appears immediately.
+ *
+ * Returns display cards only: never project/version ids, GHL ids or keys.
+ */
+const COACH_SITE = 'https://www.book-coach.ai';
+
+async function handleMyCoaches(request, env, cors) {
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') throw new HttpError(400, 'Invalid JSON body');
+  const contactId = String(body.contactId || '').trim();
+  const email = emailFromPage(body.email);
+  if (!contactId || !email) throw new HttpError(400, 'contactId and email are both required');
+
+  const contact = await ghlGetContact(env, contactId);
+  // One message for "no such contact" and "email does not match", as in mint.
+  if (!contact || String(contact.email || '').trim().toLowerCase() !== email) {
+    console.warn(`[my-coaches] refused for contact ${contactId} (no match)`);
+    throw new HttpError(403, 'We could not verify that account.');
+  }
+
+  const codes = await codesForContact(env, contactId, contact.tags);
+  const reg = await loadRegistry(env);
+  const coaches = codes
+    .map((code) => reg.get(String(code).toUpperCase()))
+    .filter((c) => c && c.slug)
+    .map((c) => {
+      const page = coachPageConfig(c);
+      return {
+        code: page.code,
+        authorName: page.authorName,
+        label: page.bookTitle,
+        authorPhotoURL: page.authorPhotoURL,
+        authorInitials: page.authorInitials,
+        pageUrl: `${COACH_SITE}/${c.slug}`,
+      };
+    });
+  return json({ coaches }, 200, cors || {});
+}
+
+/**
  * POST /api/bind/status — body { contactId, email }.
  *
  * Lets the coach page show "phone already linked" instead of offering a code to
@@ -3215,6 +3262,16 @@ const DEFAULT_TRIAL_DAYS = 10;
 const TRIAL_STARTED_TAG = 'coach-trial-started';
 
 /**
+ * The tag the ONE "My Coaches" grant workflow triggers on (config.myCoaches).
+ * Generic on purpose: GHL cannot template an Offer id, so a per-author tag
+ * needed a per-author grant workflow. This one tag replaces all of them.
+ * Course access is not entitlement — the My Coaches page asks the Worker which
+ * coaches a member has — so this tag is added, never removed.
+ */
+const MEMBER_TAG = 'coach-member';
+const myCoachesOn = (cfg) => String((cfg && cfg.myCoaches) || 'off').toLowerCase() === 'on';
+
+/**
  * Verify Shopify's webhook signature: HMAC-SHA256 of the RAW body, base64,
  * in `X-Shopify-Hmac-Sha256`.
  *
@@ -3391,7 +3448,7 @@ const formatTrialEnd = (iso) => {
   return `${d.getUTCDate()} ${TRIAL_END_MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 };
 
-const trialFieldPayload = (coach, { source, orderNumber, startedAt, endsAt }) => {
+const trialFieldPayload = (coach, { source, orderNumber, startedAt, endsAt, myCoachesUrl = '' }) => {
   const f = [
     { key: 'coach_status', field_value: 'trial' },
     { key: 'coach_trial_started', field_value: startedAt },
@@ -3401,7 +3458,9 @@ const trialFieldPayload = (coach, { source, orderNumber, startedAt, endsAt }) =>
     { key: 'coach_code', field_value: String(coach.code) },
     { key: 'coach_name', field_value: coach.displayName || coach.name || '' },
     { key: 'coach_book_title', field_value: coach.bookTitle || '' },
-    { key: 'coach_link', field_value: coach.courseLessonUrl || '' },
+    // An author with their own course links to it; otherwise the shared My
+    // Coaches lesson (config.myCoaches), which lists every coach they hold.
+    { key: 'coach_link', field_value: coach.courseLessonUrl || myCoachesUrl || '' },
     { key: 'coach_landing_url', field_value: coach.landingPageUrl || '' },
   ];
   if (source) f.push({ key: 'coach_trial_source', field_value: String(source) });
@@ -3565,12 +3624,18 @@ async function grantTrialsForOrder(env, opts) {
     const tags = [...held];
     for (const c of granted) if (c.ghlTag && !tags.includes(c.ghlTag)) tags.push(c.ghlTag);
     if (!tags.includes(TRIAL_STARTED_TAG)) tags.push(TRIAL_STARTED_TAG);
+    // The one shared My Coaches course, when it is switched on.
+    const cfg = await loadRuntimeConfig(env);
+    if (myCoachesOn(cfg) && !tags.includes(MEMBER_TAG)) tags.push(MEMBER_TAG);
 
     await ghlRequest(env, `/contacts/${encodeURIComponent(contactId)}`, {
       method: 'PUT',
       body: {
         tags,
-        customFields: trialFieldPayload(granted[0], { source, orderNumber, startedAt, endsAt: firstExpiresAt }),
+        customFields: trialFieldPayload(granted[0], {
+          source, orderNumber, startedAt, endsAt: firstExpiresAt,
+          myCoachesUrl: myCoachesOn(cfg) ? cfg.myCoachesUrl : '',
+        }),
       },
     });
 
@@ -3743,7 +3808,8 @@ export default {
         path === '/api/heygen-token' ||
         path === '/api/bind/mint' ||
         path === '/api/web/session' ||
-        path === '/api/bind/status'
+        path === '/api/bind/status' ||
+        path === '/api/my-coaches'
       ) {
         if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405 });
         const cors = corsHeaders(request, env);
@@ -3759,6 +3825,7 @@ export default {
         if (path === '/api/bind/mint') return await handleBindMint(request, env, cors);
         if (path === '/api/bind/status') return await handleBindStatus(request, env, cors);
         if (path === '/api/web/session') return await handleWebSession(request, env, cors);
+        if (path === '/api/my-coaches') return await handleMyCoaches(request, env, cors);
         return await handleHeygenToken(request, env, cors);
       }
 
@@ -3802,6 +3869,8 @@ export default {
  * surface — nothing routes here.
  */
 export const __test = {
+  handleMyCoaches,
+  MEMBER_TAG,
   coachPageConfig,
   handleCoachPage,
   applySubscriptionTags,

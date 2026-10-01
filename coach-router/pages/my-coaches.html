@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Coaches — Book Coach AI</title>
+<!--
+  MY COACHES — one page for every author (plans/20 §4.6). Nothing to edit.
+
+  Publish once at https://www.book-coach.ai/my-coaches, then embed it in the ONE
+  lesson of the "BookCoach AI — My Coaches" Course360 course:
+
+    <iframe src="https://www.book-coach.ai/my-coaches?cid={{contact.id}}&amp;em={{contact.email}}"
+            style="width:100%;height:900px;border:0" allow="microphone; autoplay"></iframe>
+
+  The page asks the Worker which coaches this member holds (POST /api/my-coaches,
+  verified by contact id + email) and shows one card per coach. Each card opens
+  that author's coach page, carrying the same identity, so the activation box
+  and the member's conversation work exactly as from a per-author course.
+  No Voiceflow key, no author values: adding an author changes nothing here.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e1730; --panel:#15213f; --line:rgba(255,255,255,.09);
+    --ink:#eef2fb; --muted:#9fb0cf; --gold:#e8c35a; --blue:#2f5fcf;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;min-height:100vh}
+  .wrap{max-width:980px;margin:0 auto;padding:32px 16px 48px}
+  header{display:flex;align-items:center;gap:12px;padding-bottom:20px;border-bottom:1px solid var(--line);margin-bottom:28px}
+  header .brand{font:600 12px/1 Inter,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  h1{font:700 30px/1.15 Fraunces,Georgia,serif;margin:0 0 6px}
+  .sub{color:var(--muted);margin:0 0 26px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px}
+  .card{display:flex;flex-direction:column;align-items:center;text-align:center;gap:10px;
+        background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 20px;
+        color:inherit;text-decoration:none;transition:transform .15s,border-color .15s}
+  .card:hover,.card:focus-visible{transform:translateY(-2px);border-color:rgba(232,195,90,.55);outline:none}
+  .photo{width:96px;height:96px;border-radius:50%;padding:3px;
+         background:conic-gradient(#e94b4b,#e8c35a,#4bc07a,#3b82f6,#a855f7,#e94b4b)}
+  .photo>div{width:100%;height:100%;border-radius:50%;background:#1d2a4d;overflow:hidden;
+             display:flex;align-items:center;justify-content:center;font:700 28px Fraunces,serif;color:var(--gold)}
+  .photo img{width:100%;height:100%;object-fit:cover}
+  .name{font:700 20px/1.2 Fraunces,Georgia,serif}
+  .label{color:var(--gold);font-style:italic}
+  .open{margin-top:6px;font:600 12px/1 Inter,sans-serif;letter-spacing:.14em;text-transform:uppercase;
+        background:var(--blue);color:#fff;border-radius:999px;padding:11px 22px}
+  .note{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;color:var(--muted)}
+  .note strong{color:var(--ink)}
+  .note a{color:var(--gold)}
+  .loading{color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><span class="brand">Book Coach AI</span></header>
+  <h1>My Coaches</h1>
+  <p class="sub">Pick a coach to start — or carry on — your conversation.</p>
+  <div id="out" class="loading">Loading your coaches…</div>
+</div>
+
+<script>
+(function myCoaches(){
+  var WORKER_URL = 'https://coach-router.bookcoachai.workers.dev';
+  var out = document.getElementById('out');
+
+  // Read cid/em WITHOUT URLSearchParams: the lesson inserts the email
+  // unencoded, and URLSearchParams turns its "+" into a space.
+  function param(name){
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(location.search);
+    if(!m) return '';
+    try { return decodeURIComponent(m[1]).trim(); } catch(e){ return m[1].trim(); }
+  }
+  var contactId = param('cid');
+  var email = param('em');
+  var unresolved = function(v){ return !v || v.indexOf('{{') !== -1; };
+
+  function note(html){ out.className = ''; out.innerHTML = '<div class="note">' + html + '</div>'; }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+
+  if(unresolved(contactId) || unresolved(email)){
+    note('<strong>Open this page from your members area.</strong><br>It needs to know who you are, which it learns from your course.');
+    return;
+  }
+
+  fetch(WORKER_URL + '/api/my-coaches', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contactId: contactId, email: email })
+  }).then(function(res){
+    if(res.status === 403) throw new Error('verify');
+    if(!res.ok) throw new Error('status ' + res.status);
+    return res.json();
+  }).then(function(data){
+    var list = (data && data.coaches) || [];
+    if(!list.length){
+      note('<strong>You have no active coach right now.</strong><br>' +
+           'If your trial has ended, you can continue at <a href="https://www.book-coach.ai" target="_top">book-coach.ai</a>.');
+      return;
+    }
+    // Same identity onward, ENCODED this time, so the coach page's activation
+    // box and the member's own conversation work as from a per-author course.
+    var id = '?cid=' + encodeURIComponent(contactId) + '&em=' + encodeURIComponent(email);
+    out.className = 'grid';
+    out.innerHTML = list.map(function(c){
+      var face = c.authorPhotoURL
+        ? '<img src="' + esc(c.authorPhotoURL) + '" alt="">'
+        : esc(c.authorInitials || '');
+      return '<a class="card" href="' + esc(c.pageUrl + id) + '">' +
+               '<div class="photo"><div>' + face + '</div></div>' +
+               '<div class="name">' + esc(c.authorName) + '</div>' +
+               '<div class="label">' + esc(c.label) + '</div>' +
+               '<span class="open">Open coach</span>' +
+             '</a>';
+    }).join('');
+  }).catch(function(err){
+    console.error('[my-coaches] ' + err.message);
+    note(err.message === 'verify'
+      ? '<strong>We could not verify your account.</strong><br>Please open this page from your members area again.'
+      : '<strong>Your coaches could not be loaded just now.</strong><br>Please refresh in a moment.');
+  });
+})();
+</script>
+</body>
+</html>
