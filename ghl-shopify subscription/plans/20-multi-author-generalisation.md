@@ -483,6 +483,82 @@ members page is the natural place to mint that token.
 > is superseded; do not install it. The lesson contributes exactly one thing: the coach iframe with
 > `?cid={{contact.id}}&em={{contact.email}}` appended.
 
+### 4.6a "My Coaches" — BUILT, TESTED LIVE, and PARKED (2026-10-01)
+
+**Status: switched OFF on purpose.** Muhammad, 2026-10-01: *"a very good idea … for now lets go
+with A"* — per-author courses stay the live model. **Nothing was deleted**: the page, the course,
+the Offer and the workflow all remain in GHL, and the Worker code ships behind a switch. Turning it
+back on is a config change, not a rebuild.
+
+#### What it is, in one paragraph
+
+Today every author needs a Course360 course, an Offer and a grant workflow, created by hand — GHL
+has no API for any of them, so they are the only onboarding steps nothing can automate (runbook 4
+and 6, ~20 min per author). My Coaches replaces all of them with **one** course for every author:
+the member opens it and sees the coaches they hold, because the page asks the Worker. A new author
+then needs **nothing** in Course360, and a reader with two books has **one** place for both coaches.
+
+#### What was built
+
+| Piece | Where | Notes |
+|---|---|---|
+| Switch | `coaches.json` → `shared.config.myCoaches` (`off`/`on`) + `myCoachesUrl` | ships **off**; seed refuses `on` with no URL, and a builder/preview URL |
+| Generic tag | Worker `MEMBER_TAG = 'coach-member'` | when on: added on every trial (`/shopify/order`) and every recognised subscription; never removed — course access is not entitlement |
+| Lesson link fallback | Worker `trialFieldPayload` | when on: an author with no `courseLessonUrl` gets `coach_link` = `myCoachesUrl`; an author who keeps a course still links to it |
+| Endpoint | Worker `POST /api/my-coaches` `{contactId, email}` | verified exactly like `/api/bind/mint` (email must match, with the "+" fix); answered from `codesForContact` — published map **plus a live tag read**, so a new buyer appears at once. Display cards only: never project/version ids, GHL ids or keys |
+| Page | `coach-router/pages/my-coaches.html` | one page for everyone, nothing per author; reads `cid`/`em` without `URLSearchParams` (keeps `+`); passes them onward encoded |
+| Tooling | `author status` steps 4/6, `seed`, `onboard` | follow the switch: steps 4 and 6 check the shared course and workflow; `onboard` stops asking for a per-author course |
+| Tests | `verify.test.mjs` | 19 tests; `verify-author` checks the `coach-member` tag while on |
+
+#### What exists in GHL (do not delete — kept for later)
+
+| Object | Value |
+|---|---|
+| Page | `https://www.book-coach.ai/my-coaches` — custom code = `pages/my-coaches.html` |
+| Course | **BookCoach AI — My Coaches**, one lesson embedding the page |
+| Member lesson URL | `https://login.leadershipbookspublishers.com/courses/products/148b4e1c-61d3-464a-895d-34c0a460f5fc` (stored as `myCoachesUrl`) |
+| Offer | one, **Free**, unlisted |
+| Workflow | **Book Coach — Grant My Coaches**: Contact Tag added = `coach-member` → Grant the My Coaches Offer — **published** |
+
+The lesson's iframe:
+
+```html
+<iframe src="https://www.book-coach.ai/my-coaches?cid={{contact.id}}&amp;em={{contact.email}}"
+        style="width:100%;height:900px;border:0" allow="microphone; autoplay"></iframe>
+```
+
+#### Proven live, 2026-10-01
+
+Real $0 order #4243 (Freddy's bundle) → Flow B → Worker → contact carrying the coach tag,
+`coach-trial-started` **and `coach-member`** → both Course360 invites arrived → the My Coaches course
+showed Freddy's card → his coach page → **activation code issued**. 19/19 automated checks; steps
+1–5 confirmed by hand by Muhammad.
+
+#### Why it is parked — the honest reason
+
+With **both** models on, a buyer got **two** invites (the author's own course *and* My Coaches) and
+had an extra page to click through. That is the confusion Muhammad saw, and it is a property of
+running both at once, not of My Coaches itself. **Never run both for the same author.**
+
+#### To switch it on later — the version to build first
+
+1. **Add the single-coach redirect** (not built yet): when `/api/my-coaches` returns exactly one
+   coach, `my-coaches.html` should go straight to that coach page (same `cid`/`em`), so a one-book
+   buyer sees no list and no extra click — identical to a per-author course. The card list then only
+   appears for readers with two or more coaches, which is where it helps.
+2. Decide per author: **new authors get no own course**; for Stickler and Freddy, either leave their
+   courses (they keep linking to them — `coach_link` prefers `courseLessonUrl`) or migrate them and
+   unpublish their grant workflows, so nobody receives two invites.
+3. `npm run author -- config` cannot set it yet — set `shared.config.myCoaches: "on"` in
+   `coaches.json`, then `npm run push`. `myCoachesUrl` is already recorded.
+4. Prove it with `npm run verify-author -- --code <a new author> --shopify-order --write --keep`
+   — the report includes the `coach-member` check.
+
+> ⚠ Existing buyers do not get `coach-member` retroactively — the tag is added on a *new* trial or
+> on the reconcile's subscription path. Migrating Stickler's or Freddy's existing buyers needs a
+> one-off backfill (apply `coach-member` to every holder of their coach tag) before their own
+> courses are retired.
+
 ### 4.7 Days 7 / 9 / 10 — no structural change
 
 The waits, the guards and the three emails are already generic in shape and proven end to end on
