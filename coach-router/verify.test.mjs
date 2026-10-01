@@ -3524,6 +3524,46 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
 }
 
 /* ---------------------------------------------------------------------------
+ * A "+" email through the lesson URL (2026-10-01)
+ * The lesson passes ?em={{contact.email}} unencoded, so "+" arrives as a space.
+ * ------------------------------------------------------------------------- */
+{
+  const worker = (await import('./coach-router.worker.js')).default;
+  console.log('\nactivation code - a "+" in the email');
+  const mkEnv = async () => {
+    __resetCaches();
+    const kv = fakeKV();
+    await kv.put('coach:1043', JSON.stringify({ name: 'Freddy Davis', ghlTag: 'bookcoach-freddy-davis-active', keyVar: 'VF_KEY_1043' }));
+    await kv.put('config', JSON.stringify({ leaseHours: 48, archiveRetentionDays: 30 }));
+    return { COACH_KV: kv, GHL_API_TOKEN: 'pit-x', GHL_LOCATION_ID: 'loc', ALLOWED_ORIGIN: 'https://www.book-coach.ai' };
+  };
+  const contact = { id: 'C1', email: 'zain.botsify+verify-1043@gmail.com', tags: ['bookcoach-freddy-davis-active'] };
+  const mint = async (email) => {
+    const env = await mkEnv();
+    const real = globalThis.fetch;
+    globalThis.fetch = async (url) => (String(url).includes('/contacts/C1')
+      ? new Response(JSON.stringify({ contact }), { status: 200 })
+      : new Response('{}', { status: 200 }));
+    try {
+      const res = await worker.fetch(new Request('https://w.dev/api/bind/mint', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', Origin: 'https://www.book-coach.ai' },
+        body: JSON.stringify({ contactId: 'C1', email }),
+      }), env, {});
+      return res.status;
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  // What URLSearchParams actually does to the lesson URL's bare "+":
+  const asTheBrowserReadsIt = new URLSearchParams('em=zain.botsify+verify-1043@gmail.com').get('em');
+  t('the browser really does turn "+" into a space', asTheBrowserReadsIt, 'zain.botsify verify-1043@gmail.com');
+  t('🔑 that email now verifies, and a code is minted', await mint(asTheBrowserReadsIt), 200);
+  t('the correctly encoded email still verifies', await mint('zain.botsify+verify-1043@gmail.com'), 200);
+  t('a genuinely different email is still refused', await mint('someone.else@gmail.com'), 403);
+}
+
+/* ---------------------------------------------------------------------------
  * Voiceflow personal key — one key for every coach (2026-09-30)
  * ------------------------------------------------------------------------- */
 {

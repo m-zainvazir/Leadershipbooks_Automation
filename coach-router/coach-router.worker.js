@@ -2828,6 +2828,23 @@ async function ghlGetContact(env, contactId) {
  * Union rather than fallback: either source alone is a legitimate grant, and
  * preferring one would silently drop the other.
  */
+/**
+ * An email that travelled through a page URL, restored.
+ *
+ * The Course360 lesson builds the coach page URL as
+ * `?cid={{contact.id}}&em={{contact.email}}` and does NOT encode the email, so
+ * a `+` arrives bare - and a bare `+` in a query string reads as a SPACE.
+ * `me+books@gmail.com` became `me books@gmail.com`, matched no contact, and
+ * the reader was refused an activation code forever. Found 2026-10-01 on a
+ * verify-author run (address `zain.botsify+verify-...`).
+ *
+ * An email address can never contain a space, so turning spaces back into
+ * `+` is lossless - and fixing it here fixes every author's page at once.
+ */
+function emailFromPage(raw) {
+  return String(raw || '').trim().toLowerCase().replace(/ /g, '+');
+}
+
 async function codesForContact(env, contactId, tags) {
   let published = [];
   if (contactId) {
@@ -2863,7 +2880,7 @@ async function handleBindMint(request, env, cors) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'Invalid JSON body');
 
   const contactId = String(body.contactId || '').trim();
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = emailFromPage(body.email);
   if (!contactId || !email) throw new HttpError(400, 'contactId and email are both required');
 
   const rlKey = `rl:mint:${contactId}`;
@@ -2917,7 +2934,7 @@ async function handleBindStatus(request, env, cors) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'Invalid JSON body');
 
   const contactId = String(body.contactId || '').trim();
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = emailFromPage(body.email);
   if (!contactId || !email) throw new HttpError(400, 'contactId and email are both required');
 
   const contact = await ghlGetContact(env, contactId);
@@ -3027,7 +3044,7 @@ async function handleWebSession(request, env, cors) {
   if (!body || typeof body !== 'object') throw new HttpError(400, 'Invalid JSON body');
 
   const contactId = String(body.contactId || '').trim();
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = emailFromPage(body.email);
   if (!contactId || !email) throw new HttpError(400, 'contactId and email are both required');
 
   const rlKey = `rl:web:${contactId}`;
