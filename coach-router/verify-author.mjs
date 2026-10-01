@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { loadConfig, HERE } from './lib-config.mjs';
+import { loadConfig, HERE, runtimeConfig } from './lib-config.mjs';
 import { recordVerify } from './lib-registry.mjs';
 import { __test } from './coach-router.worker.js';
 import {
@@ -241,6 +241,11 @@ if (contact) {
   rows.push({ check: 'contact created', expected: email, actual: contact.id, status: 'PASS' });
   rows.push(...checkContact(contact, coach, { orderNumber, now, formatTrialEnd: __test.formatTrialEnd, source: SHOP ? FLOW_SOURCE : undefined }));
   rows.push(checkTrialRecord(kvGet(`trial:${contact.id}:${coach.code}`), coach, contact.id));
+  // With the shared My Coaches course on, the generic tag is what grants it.
+  if (runtimeConfig(shared).myCoaches === 'on') {
+    const has = (contact.tags || []).map((x) => String(x).toLowerCase()).includes(__test.MEMBER_TAG);
+    rows.push({ check: 'tag: My Coaches (grants the shared course)', expected: __test.MEMBER_TAG, actual: has ? __test.MEMBER_TAG : '(absent)', status: has ? 'PASS' : 'FAIL' });
+  }
 }
 
 /* ---------------------------------------------------------------- cleanup ---- */
