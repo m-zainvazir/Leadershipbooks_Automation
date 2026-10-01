@@ -189,8 +189,8 @@ if (SHOP) {
     gql = conn.gql;
     shopOrder = await placeTestOrder(gql, { variantId: coach.shopifyVariantId, email });
     orderNumber = shopOrder.orderName;
-    // Flow sends order.id, a GID — the Worker's idempotency key is built from it.
-    shopKey = `shop:${shopOrder.orderGid}`;
+    // The Worker keys idempotency on the bare order number (normalizeOrderId).
+    shopKey = `shop:${shopOrder.orderId}`;
     const tagged = shopOrder.tags.map((x) => String(x).toLowerCase()).includes(DELIVERED_TAG);
     rows.push({ check: 'order placed, tagged for Flow B', expected: DELIVERED_TAG, actual: `${shopOrder.orderName} tags [${shopOrder.tags.join(', ')}]`, status: tagged ? 'PASS' : 'FAIL' });
     endpointOk = tagged;

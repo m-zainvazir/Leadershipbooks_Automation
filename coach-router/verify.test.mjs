@@ -1845,6 +1845,16 @@ console.log('/shopify/order - signature, idempotency, mapping, grant');
     t('a redelivered order is reported as a duplicate', [out.ok, out.duplicate, out.matched], [true, true, 0]);
     t('and costs no further GHL calls', env.__calls.length, firstCalls);
   }
+  {
+    // Order #4238, 2026-10-01: the native webhook sent the bare number, Flow
+    // sent the GID, 2.5 minutes apart — and both passed the seen-check.
+    const env = makeEnv();
+    await withFetch(env, ghlOk, async () => { await handleShopifyOrder(await req({ ...ORDER, order_id: '18918362284346' }), env, null); });
+    let res;
+    await withFetch(env, ghlOk, async () => { res = await handleShopifyOrder(await req({ ...ORDER, order_id: 'gid://shopify/Order/18918362284346' }), env, null); });
+    t('the same order as a bare number then a GID is ONE order', (await res.json()).duplicate, true);
+    truthy('...keyed on the bare number', await env.COACH_KV.get('shop:18918362284346'));
+  }
 
   // --- the second guard: an existing trial record --------------------------
   {

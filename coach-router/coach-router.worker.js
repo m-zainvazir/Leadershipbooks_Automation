@@ -3288,6 +3288,13 @@ function shopifyProductIds(body) {
   return [...new Set(out)];
 }
 
+/** `gid://shopify/Order/123` and `123` are one order: keep the number. */
+function normalizeOrderId(raw) {
+  const s = String(raw ?? '').trim();
+  const gid = /^gid:\/\/shopify\/Order\/(\d+)$/i.exec(s);
+  return gid ? gid[1] : s;
+}
+
 /** Product id -> coach entries. Built from the registry, so it never drifts. */
 async function coachesForProductIds(env, productIds) {
   const reg = await loadRegistry(env);
@@ -3410,7 +3417,11 @@ async function handleShopifyOrder(request, env, ctx) {
   // are this project's own payload convention, already live in both Shopify
   // Flows and in test-ghl-webhook.ps1; `id` / `name` are what Shopify's native
   // webhook sends. Rejecting either would be a silent 400 on every order.
-  const orderId = String(body.order_id ?? body.shopify_order_id ?? body.id ?? '').trim();
+  // Reduced to the bare number: Shopify's native webhook sends `18918362284346`
+  // and Flow sends `gid://shopify/Order/18918362284346` for the SAME order.
+  // Seen on order #4238 (2026-10-01) arriving both ways, 2.5 min apart, and
+  // passing the idempotency check twice because the keys differed.
+  const orderId = normalizeOrderId(body.order_id ?? body.shopify_order_id ?? body.id);
   const orderNumber = String(body.order_number ?? body.shopify_order_number ?? body.name ?? '').trim();
   const email = String(body.email ?? '').trim().toLowerCase();
   const source = String(body.source ?? 'shopify').trim();
