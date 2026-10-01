@@ -38,17 +38,17 @@ person pastes or clicks · ✋ **Manual** — no API exists, a person does it in
 
 ### After that — nothing per author, ever
 
-| What | Automated? |
-|---|---|
-| Order paid → Flow A waits 21 days → trial starts | ✅ Automatic |
-| Delivery known → tag the order `delivered-manual` → Flow B starts the trial now | ✋ one tag on the order, then automatic |
-| Trial start: tags, ten contact fields, welcome email, Course360 invite | ✅ Automatic |
-| Day 7 / 9 / 10 emails | ✅ Automatic — one workflow for every author |
-| Trial expiry: tag removed, `coach_status: expired` | ✅ Automatic — Worker sweep |
-| $59 purchase → entitlement, tag, course, `coach_status: active` | ✅ Automatic — Worker reconcile |
-| Cancellation → access ends within ~15 min | ✅ Automatic |
-| SMS / voice routed to the right coach | ✅ Automatic — one number, routed by entitlement |
-| Coach page falls back to Voiceflow if the Worker is down (`CONNECTION: "auto"`) | ✅ Automatic |
+| # | What | Automated? |
+|---|---|---|
+| 18 | Order paid → Flow A waits 21 days → trial starts | ✅ Automatic |
+| 19 | Delivery known → tag the order `delivered-manual` → Flow B starts the trial now | ✋ one tag on the order, then automatic |
+| 20 | Trial start: tags, ten contact fields, welcome email, Course360 invite | ✅ Automatic |
+| 21 | Day 7 / 9 / 10 emails | ✅ Automatic — one workflow for every author |
+| 22 | Trial expiry: tag removed, `coach_status: expired` | ✅ Automatic — Worker sweep |
+| 23 | $59 purchase → entitlement, tag, course, `coach_status: active` | ✅ Automatic — Worker reconcile |
+| 24 | Cancellation → access ends within ~15 min | ✅ Automatic |
+| 25 | SMS / voice routed to the right coach | ✅ Automatic — one number, routed by entitlement |
+| 26 | Coach page falls back to Voiceflow if the Worker is down (`CONNECTION: "auto"`) | ✅ Automatic |
 
 ---
 
