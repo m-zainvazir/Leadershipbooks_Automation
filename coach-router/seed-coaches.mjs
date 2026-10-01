@@ -160,11 +160,15 @@ for (const coach of coaches) {
   // A Voiceflow PERSONAL key names the project by the version ID in the path,
   // and rejects an alias there (verified 2026-09-30: `main` -> 400, the 24-char
   // ids -> 200). Pushing in that state would take this coach offline.
+  // Refused only when WRITING (npm run push): it is the push that would take the
+  // coach offline. A local edit of coaches.json - which runs this as a dry
+  // check - is warned, not blocked, or no other change could be saved at all.
   if (coach.keySource === 'personal' && !/^[0-9a-f]{24}$/i.test(String(coach.versionID || ''))) {
-    problems.push(
+    const msg =
       `${where}: versionID "${coach.versionID}" is an alias, and the shared personal key needs the ` +
-        `24-character version ID (Voiceflow answers 400 for an alias). Set the real id before pushing.`,
-    );
+      `24-character version ID (Voiceflow answers 400 for an alias). Set the real id before pushing.`;
+    if (WRITE) problems.push(msg);
+    else console.warn(`  ! ${msg}`);
   }
   if (!coach.apiKey) {
     console.warn(`  ! ${where}: no vfKey — KV can still be seeded, but the coach cannot answer until the secret exists (node sync-secrets.mjs --write).`);
