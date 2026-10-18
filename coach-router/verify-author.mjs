@@ -32,6 +32,7 @@ import {
   testEmail, emailProblems, orderPayload, coachProblems, checkContact, checkTrialRecord, formatTable, LIMITS_NOTICE, LIMITS_NOTICE_ORDER,
 } from './lib-verify-author.mjs';
 import { connectShopify, shopifyConfig, placeTestOrder, cancelTestOrder, DELIVERED_TAG } from './lib-shopify.mjs';
+import { findCoach } from './lib-find.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -67,8 +68,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ------------------------------------------------------------------ inputs --- */
 
-const code = valOf('--code');
-if (!code) die('Missing --code.\n\n  npm run verify-author -- --code 1044 [--email you@yourdomain.com]');
+// The code, the slug or the name (lib-find.mjs) — resolved once the registry is loaded.
+const query = valOf('--code') ?? valOf('--author');
+if (!query) die('Missing --code.\n\n  npm run verify-author -- --code 1044 [--email you@yourdomain.com]   (or the slug / name: --code rick-meyer)');
 
 let config;
 try {
@@ -79,7 +81,10 @@ try {
 const { shared, coaches } = config;
 // --email wins; otherwise the saved test inbox (npm run author -- config --verifyEmail ...).
 const baseEmail = valOf('--email') || shared.verifyEmail;
-const coach = coaches.find((c) => c.code === String(code));
+const found = findCoach(coaches, query);
+if (found.problem) die(found.problem);
+const coach = found.coach;
+const code = coach.code;
 const workerUrl = String(shared.workerUrl || '').replace(/\/+$/, '');
 
 const problems = [...coachProblems(coach), ...emailProblems(baseEmail)];

@@ -12,16 +12,16 @@ independently and did not know about each other.
 | Surviving ~15 coaches | [`02-multi-coach-scaling.md`](02-multi-coach-scaling.md) |
 | Phase 2 — the Shopify Flows, and why | [`03-shopify-flows.md`](03-shopify-flows.md) |
 | Phase 2 — click by click | [`04-phase-2-build-runbook.md`](04-phase-2-build-runbook.md) |
-| **Handing this to a fresh session** | **[`../NEW-CHAT-PROMPT.md`](../NEW-CHAT-PROMPT.md)** — kept current; currently points at phase 5 |
 | **Phase 4 — trial expiry, and why** | **[`05-phase-4-trial-expiry.md`](05-phase-4-trial-expiry.md)** |
 | **Phase 4 — click by click** | **[`06-phase-4-build-runbook.md`](06-phase-4-build-runbook.md)** |
 | **Phase 5 — the $59 conversion path** | **[`07-phase-5-conversion-path.md`](07-phase-5-conversion-path.md)** — the current focus |
 | **Funnel + landing page copy, paste-ready** | **[`08-funnel-and-landing-copy.md`](08-funnel-and-landing-copy.md)** — phase 5 step 1 and phase 7 |
 | **The live transaction test** | **[`09-live-transaction-test.md`](09-live-transaction-test.md)** — one card, five open answers, plus three **free** routes. Phase 4 steps 4c/4e + phase 5 steps 6/7 |
 | **What the coach IS, and how activation works** | **[`how-the-coach-works.md`](how-the-coach-works.md)** — the orientation doc. Channels, the lease, the activation code end to end. Read this before touching the Worker |
-| **Adding a new author, A to Z** | **[`21-new-author-runbook.md`](21-new-author-runbook.md)** — the onboarding runbook, written from the Freddy Davis run. Start here for author N |
+| **Adding a new author, A to Z** | **[`new-author-runbook.md`](new-author-runbook.md)** — the onboarding runbook, written from the Freddy Davis run. Start here for author N |
 | **Automating onboarding** | **[`21-onboarding-automation.md`](21-onboarding-automation.md)** — taking author onboarding from 9 manual steps to 4. What is blocked, what is free, and what stays manual forever |
 | **Many authors, not one** | **[`20-multi-author-generalisation.md`](20-multi-author-generalisation.md)** — the whole journey made variable per author. Executes `02`; supersedes its §2–§6 as the build plan |
+| **Tracking every author, and catching silent breakage** | **[`22-pipeline-dashboard.md`](22-pipeline-dashboard.md)** — the step registry, `npm run pipeline`, `npm run dashboard` (with the **+ Add author** wizard), and the after-launch health checks. Lives in `BookCoach Author Dashboard/`. **Built 2026-10-02** |
 | **Wanted, but later** | **[`29-later.md`](29-later.md)** — deferred-but-intended work. Unlike the parking lot, these are expected to get done; re-raising them is welcome |
 | **Parking lot** | **[`11-parking-lot.md`](11-parking-lot.md)** — deferred, low priority, or deliberately dropped. Nothing here blocks launch |
 | The coach product — Worker, channels, entitlement internals | `../../coach-router/HANDOFF.md` |

@@ -436,14 +436,40 @@ async function loadRegistry(env, { force = false } = {}) {
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
 
+  // Renumbered coaches (2026-10-02: 1042 -> 1001 ...). The old code lives on in
+  // KV records (trial:, sess:, tok:, leases), in coach pages' COACH_CODE and in
+  // GHL fields, so it must keep finding the coach. And an old `coach:<code>`
+  // entry the renumbered one replaced is dropped here, so a coach can never be
+  // in the registry twice — not even for the seconds between a push and the
+  // old key's deletion.
+  const former = new Map();
+  for (const coach of byCode.values()) {
+    for (const old of Array.isArray(coach.formerCodes) ? coach.formerCodes : []) {
+      const k = String(old).trim().toUpperCase();
+      if (k && k !== coach.code) former.set(k, coach.code);
+    }
+  }
+  for (const k of former.keys()) byCode.delete(k);
+  Object.defineProperty(byCode, 'former', { value: former, enumerable: false });
+
   _registryCache = { at: now, byCode };
   return byCode;
 }
 
+/** The current code for `code`: itself, or the new code if it is a coach's former one. */
+function canonicalCode(reg, code) {
+  const k = String(code ?? '').trim().toUpperCase();
+  if (reg.has(k)) return k;
+  return (reg.former && reg.former.get(k)) || k;
+}
+
+/** A coach by its current OR former code. */
+const coachByCode = (reg, code) => reg.get(canonicalCode(reg, code)) || null;
+
 async function getCoach(env, code) {
   if (!code) return null;
   const reg = await loadRegistry(env);
-  return reg.get(String(code).trim().toUpperCase()) || null;
+  return coachByCode(reg, code);
 }
 
 /**
@@ -456,8 +482,8 @@ async function resolveCoach(env, input) {
   const raw = String(input).trim();
 
   const digits = raw.replace(/\D/g, '');
-  if (digits && reg.has(digits)) return reg.get(digits);
-  if (reg.has(raw.toUpperCase())) return reg.get(raw.toUpperCase());
+  if (digits && coachByCode(reg, digits)) return coachByCode(reg, digits);
+  if (coachByCode(reg, raw)) return coachByCode(reg, raw);
 
   const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
   const needle = norm(raw);
@@ -801,7 +827,7 @@ async function handleSms(request, env) {
   // six-character message is never mistaken for one.
   const redeemed = await redeemBindToken(env, from, bodyText);
   if (redeemed) {
-    const coach = redeemed.codes.length ? reg.get(String(redeemed.codes[0]).toUpperCase()) : null;
+    const coach = redeemed.codes.length ? coachByCode(reg, redeemed.codes[0]) : null;
     if (coach) {
       const userID = vfUserFor(await loadRuntimeConfig(env), coach, from, redeemed.contactId);
       return startCoachOverSms(env, from, userID, coach);
@@ -858,7 +884,7 @@ async function handleSms(request, env) {
   let session = await getSession(env, 'sms', from);
 
   // --- No pinned coach yet.
-  if (!session || !session.code || !reg.has(String(session.code).toUpperCase())) {
+  if (!session || !session.code || !coachByCode(reg, session.code)) {
     if (looksLikeCrisis(bodyText)) return smsReply(crisisSmsText(env));
 
     // Scoped to what this caller is entitled to. With one entitlement the
@@ -881,11 +907,11 @@ async function handleSms(request, env) {
 
   // --- Pinned. Switching is only possible between coaches the caller holds.
   const switchTo = codes ? await resolveEntitledCoach(env, bodyText, codes) : await resolveCoach(env, bodyText);
-  if (switchTo && switchTo.code !== session.code && codes && codes.length > 1) {
+  if (switchTo && switchTo.code !== canonicalCode(reg, session.code) && codes && codes.length > 1) {
     return startCoachOverSms(env, from, userFor(switchTo), switchTo);
   }
 
-  const coach = reg.get(String(session.code).toUpperCase());
+  const coach = coachByCode(reg, session.code);
 
   // Slide the TTL, but only when that costs something worth paying — see
   // touchSession. This is the hot path: one write per message here is what
@@ -991,7 +1017,7 @@ function gatherAttrs(action, { input = 'speech dtmf', hints = '', numDigits = nu
  * hinted; without it (mode "off") the old behaviour is unchanged.
  */
 function speechHints(reg, codes = null) {
-  const allowed = Array.isArray(codes) && codes.length ? new Set(codes.map((c) => String(c).toUpperCase())) : null;
+  const allowed = Array.isArray(codes) && codes.length ? new Set(codes.map((c) => canonicalCode(reg, c))) : null;
   const words = new Set();
   for (const c of reg.values()) {
     if (allowed && !allowed.has(String(c.code).toUpperCase())) continue;
@@ -1472,7 +1498,7 @@ async function sendSmsViaTwilio(env, to, body) {
 async function webCoachAndUser(env, body, path) {
   const gate = await webGateDecision(env, body, path);
   const coach = gate.session
-    ? await getCoach(env, pickEntitledCode(gate.session, body.code))
+    ? await getCoach(env, pickEntitledCode(gate.session, body.code, await loadRegistry(env)))
     : await getCoach(env, body.code);
   if (!coach) throw new HttpError(404, `Unknown coach code: ${body.code}`);
   const userID = await webUserID(env, gate.session, body.userID);
@@ -1556,7 +1582,7 @@ async function handleHeygenToken(request, env, cors) {
   const body = await request.json().catch(() => ({}));
   const gate = await webGateDecision(env, body, '/api/heygen-token');
   const coach = gate.session
-    ? await getCoach(env, pickEntitledCode(gate.session, body && body.code))
+    ? await getCoach(env, pickEntitledCode(gate.session, body && body.code, await loadRegistry(env)))
     : await getCoach(env, body && body.code);
   if (!coach) throw new HttpError(404, `Unknown coach code: ${body && body.code}`);
 
@@ -2355,7 +2381,7 @@ async function sweepArchives(env, cfg) {
         continue;
       }
 
-      const coach = (rec.codes || []).length ? reg.get(String(rec.codes[0]).toUpperCase()) : null;
+      const coach = (rec.codes || []).length ? coachByCode(reg, rec.codes[0]) : null;
       // The per-phone conversation, plus the shared one when sharedMemory was
       // on at revocation (see revokeSubscriber).
       const userIDs = [rec.userID, rec.sharedUserID].filter(Boolean);
@@ -2676,7 +2702,10 @@ async function sweepExpiredTrials(env, cfg, opts = {}) {
   );
 
   for (const rec of batch) {
-    const coach = reg.get(String(rec.code).toUpperCase());
+    // A record written before a renumber carries the OLD code. Without the
+    // former-code lookup it would read as an orphan and be deleted — leaving that
+    // reader's tag on forever.
+    const coach = coachByCode(reg, rec.code);
     if (!coach || !coach.ghlTag) {
       // The coach left the registry. Nothing to revoke, and keeping the record
       // would mean retrying forever.
@@ -2948,7 +2977,7 @@ async function handleMyCoaches(request, env, cors) {
   const codes = await codesForContact(env, contactId, contact.tags);
   const reg = await loadRegistry(env);
   const coaches = codes
-    .map((code) => reg.get(String(code).toUpperCase()))
+    .map((code) => coachByCode(reg, code))
     .filter((c) => c && c.slug)
     .map((c) => {
       const page = coachPageConfig(c);
@@ -3150,10 +3179,11 @@ async function webGateDecision(env, body, path) {
 }
 
 /** The requested code if the caller is entitled to it, else their own. */
-function pickEntitledCode(session, requested) {
-  const allowed = new Set(session.codes.map((c) => String(c).toUpperCase()));
-  const wanted = String(requested || '').toUpperCase();
-  return allowed.has(wanted) ? wanted : session.codes[0];
+function pickEntitledCode(session, requested, reg = null) {
+  const canon = (c) => (reg ? canonicalCode(reg, c) : String(c || '').toUpperCase());
+  const allowed = new Set(session.codes.map(canon));
+  const wanted = canon(requested);
+  return allowed.has(wanted) ? wanted : canon(session.codes[0]);
 }
 
 /**
@@ -3707,9 +3737,9 @@ async function resolveEntitledCoach(env, input, codes) {
   if (!Array.isArray(codes) || !codes.length) return null;
   const reg = await loadRegistry(env);
 
-  if (codes.length === 1) return reg.get(String(codes[0]).toUpperCase()) || null;
+  if (codes.length === 1) return coachByCode(reg, codes[0]);
 
-  const allowed = new Set(codes.map((c) => String(c).toUpperCase()));
+  const allowed = new Set(codes.map((c) => canonicalCode(reg, c)));
   const candidate = await resolveCoach(env, input);
   if (candidate && allowed.has(String(candidate.code).toUpperCase())) return candidate;
   return null;
@@ -3914,6 +3944,8 @@ export const __test = {
   webSessionFor,
   webGateDecision,
   pickEntitledCode,
+  canonicalCode,
+  getCoach,
   webUserID,
   mintWebSessionToken,
   handleBindStatus,

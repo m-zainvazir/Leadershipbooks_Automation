@@ -1,0 +1,222 @@
+<!--
+  ============================================================================
+  Book Coach AI — PART 2 of 2: the members-area header script
+  ============================================================================
+
+  PASTE THIS into the MEMBERS AREA site's tracking code / custom header —
+  the same kind of place coach-page-snippet.html went, but on
+  login.leadershipbookspublishers.com rather than book-coach.ai.
+
+  It does nothing at all on pages that have no coach block, so it is safe to
+  load site-wide.
+
+  WHY IT IS NOT IN THE LESSON
+  The lesson editor strips <script> and <button>. Pasted markup renders as an
+  empty box, or as unclickable text with the styling intact — either way it
+  looks installed and is not.
+
+  WHY IT WAITS
+  The course section is a single-page app: lessons load without a page refresh.
+  A header script therefore runs BEFORE the lesson div exists, and again does
+  nothing. So this watches for the block to appear and re-runs on every lesson
+  change, initialising each block exactly once.
+
+  WHAT IT DOES — two independent jobs
+  1. PHONE ACTIVATION. Builds the button and shows a 6-character code the member
+     texts once, linking their handset to their GHL account.
+  2. WEB SESSION. Silently mints a token and appends it to the coach iframe's
+     URL, so the Worker can tell a paying member from a stranger with the link.
+
+  Job 2 runs first and in its own try/catch, so a problem in one cannot take out
+  the other.
+
+  IF THE LESSON EDITOR HAS A "CUSTOM CODE" OR "HTML" BLOCK (as opposed to rich
+  text), you can skip this file: paste members-activation.html into that block
+  instead and it is self-contained. This split exists because rich-text blocks
+  sanitise.
+  ============================================================================
+-->
+
+<script>
+(function () {
+  var WORKER = 'https://coach-router.bookcoachai.workers.dev';
+
+  // Substring identifying the coach iframe on the lesson page.
+  var IFRAME_MATCH = 'book-coach.ai';
+
+  var ROOT_ID = 'coach-activate';
+  var DONE_ATTR = 'data-coach-ready';
+
+  // One session token per member per page load, reused across lesson changes so
+  // navigating the course does not mint a new one every time.
+  var sessionPromise = null;
+
+  /* ---- helpers --------------------------------------------------------- */
+
+  function post(path, payload) {
+    return fetch(WORKER + path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        return { status: res.status, body: body };
+      });
+    });
+  }
+
+  // GHL leaves the literal placeholder in place when a merge field is not
+  // supported on the page type. Sending that on would produce a confusing 403.
+  function unresolved(v) {
+    return !v || v.indexOf('{{') !== -1 || v.indexOf('}}') !== -1;
+  }
+
+  function identity(root) {
+    var id = (root.getAttribute('data-contact-id') || '').trim();
+    var em = (root.getAttribute('data-email') || '').trim();
+    if (unresolved(id) || unresolved(em)) return null;
+    return { contactId: id, email: em };
+  }
+
+  function el(tag, style, text) {
+    var n = document.createElement(tag);
+    if (style) n.setAttribute('style', style);
+    if (text) n.textContent = text;
+    return n;
+  }
+
+  /* ---- job 2: hand the coach iframe a session token -------------------- */
+
+  function findFrame() {
+    var frames = document.getElementsByTagName('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      var src = frames[i].getAttribute('src') || '';
+      if (src.indexOf(IFRAME_MATCH) !== -1) return frames[i];
+    }
+    return null;
+  }
+
+  function wireIframe(who, attempt) {
+    var frame = findFrame();
+    if (!frame) {
+      // The iframe can render after the block. Retry briefly, then give up
+      // quietly — the coach still works while the gate is off or in warn.
+      if ((attempt || 0) < 10) {
+        setTimeout(function () { wireIframe(who, (attempt || 0) + 1); }, 500);
+      }
+      return;
+    }
+
+    var src = frame.getAttribute('src') || '';
+    if (src.indexOf('s=') !== -1) return; // already carries a token
+
+    if (!sessionPromise) sessionPromise = post('/api/web/session', who);
+
+    sessionPromise.then(function (r) {
+      if (!r || r.status !== 200 || !r.body.token) return;
+      var now = frame.getAttribute('src') || '';
+      if (now.indexOf('s=') !== -1) return;
+      frame.setAttribute('src', now + (now.indexOf('?') === -1 ? '?' : '&') + 's=' + encodeURIComponent(r.body.token));
+    }).catch(function () { /* leave the iframe as it was */ });
+  }
+
+  /* ---- job 1: the activation button ----------------------------------- */
+
+  function buildUI(root, who) {
+    root.appendChild(el('h3', 'margin:0 0 .5rem', 'Reach your coach by text or phone'));
+    root.appendChild(el('p', 'margin:0 0 1rem',
+      'Link your phone once, and you can text or call your coach any time — the conversation carries on wherever you left off.'));
+
+    var out = el('div', 'margin-top:1rem');
+    out.setAttribute('aria-live', 'polite');
+
+    if (!who) {
+      // Loud, in place of the button, so this is never mistaken for working.
+      out.innerHTML = '<p style="color:#b00">We could not identify your account on this page '
+        + '(the contact merge fields did not resolve). Please let support know which page you are on.</p>';
+      root.appendChild(out);
+      return;
+    }
+
+    var btn = el('button',
+      'padding:.6rem 1.1rem;font-size:1rem;cursor:pointer;border-radius:.35rem;border:1px solid #333;background:#111;color:#fff',
+      'Get my activation code');
+    btn.type = 'button';
+    root.appendChild(btn);
+    root.appendChild(out);
+
+    function say(html) { out.innerHTML = html; }
+
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      say('<p>Getting your code…</p>');
+
+      post('/api/bind/mint', who).then(function (r) {
+        btn.disabled = false;
+
+        if (r.status === 200 && r.body.token) {
+          var mins = Math.round((r.body.expiresInSeconds || 900) / 60);
+          say(
+            '<p style="margin:0 0 .5rem">Text this code to <strong>' + (r.body.smsTo || '') + '</strong>:</p>' +
+            '<p style="font-size:2rem;letter-spacing:.25em;font-weight:700;margin:.25rem 0">' + r.body.token + '</p>' +
+            '<p style="margin:.5rem 0 0;color:#555">Expires in ' + mins + ' minutes and works once. ' +
+            'Your coach will reply as soon as it arrives.</p>'
+          );
+          return;
+        }
+        if (r.status === 429) {
+          say('<p style="color:#b00">You have requested several codes already. Please wait a little and try again.</p>');
+          return;
+        }
+        if (r.status === 403) {
+          say('<p style="color:#b00">' + (r.body.error || 'We could not verify your subscription.') +
+              ' If you think this is wrong, contact support.</p>');
+          return;
+        }
+        say('<p style="color:#b00">Something went wrong getting your code. Please try again in a moment.</p>');
+      }).catch(function () {
+        btn.disabled = false;
+        say('<p style="color:#b00">We could not reach the activation service. Please try again in a moment.</p>');
+      });
+    });
+  }
+
+  /* ---- boot, once per block -------------------------------------------- */
+
+  function boot(root) {
+    if (root.getAttribute(DONE_ATTR)) return;
+    root.setAttribute(DONE_ATTR, '1');
+
+    var who = identity(root);
+
+    // Job 2 first, and isolated: it is the security-relevant half.
+    try { if (who) wireIframe(who, 0); } catch (e) {}
+
+    try { buildUI(root, who); } catch (e) {}
+  }
+
+  var pending = null;
+  function scan() {
+    var root = document.getElementById(ROOT_ID);
+    if (root) boot(root);
+  }
+  function scanSoon() {
+    if (pending) return;
+    pending = setTimeout(function () { pending = null; scan(); }, 100);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', scan);
+  } else {
+    scan();
+  }
+
+  // The lesson body is replaced without a page load, so watch for it.
+  try {
+    new MutationObserver(scanSoon).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {
+    // No MutationObserver: fall back to a slow poll.
+    setInterval(scan, 1500);
+  }
+})();
+</script>

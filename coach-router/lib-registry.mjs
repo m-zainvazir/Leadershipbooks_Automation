@@ -33,6 +33,32 @@ export function recordVerify(code, result) {
   writeFileSync(STATE_FILE, `${JSON.stringify(s, null, 2)}\n`, 'utf8');
 }
 
+/** One author's sign-offs, keyed by step id: { at, note, checks[] }. */
+export const readSignoffs = (code, state = readState()) => (state[code] && state[code].signoffs) || {};
+
+/**
+ * Record (or, with `value` null, remove) a person's confirmation of a step's
+ * MANUAL checks — the "Tested" column's sibling. `checks` names exactly which
+ * checks were confirmed, so a check added to that step later is not covered.
+ * Plan: ghl-shopify subscription/plans/22-pipeline-dashboard.md §4.3.
+ */
+export function recordSignoff(code, step, value, { file = STATE_FILE } = {}) {
+  let s = {};
+  try {
+    s = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
+  } catch {
+    s = {};
+  }
+  const mine = { ...(s[code] || {}) };
+  const signoffs = { ...(mine.signoffs || {}) };
+  if (value === null) delete signoffs[step];
+  else signoffs[step] = value;
+  mine.signoffs = signoffs;
+  s[code] = mine;
+  writeFileSync(file, `${JSON.stringify(s, null, 2)}\n`, 'utf8');
+  return signoffs;
+}
+
 /**
  * Apply `mutate(doc)` to coaches.json. `mutate` edits the parsed document in
  * place and may throw to abort before anything is written.

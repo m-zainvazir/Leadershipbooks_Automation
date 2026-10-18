@@ -6,7 +6,8 @@
  */
 import { __test } from './coach-router.worker.js';
 import { runtimeConfig, configProblems, coachProblems, assertNoSecrets, registryValue, loadConfig } from './lib-config.mjs';
-import { writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { STEP } from './steps.mjs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -3421,6 +3422,63 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     truthy('another coach\'s COACH_CODE FAILS', /another coach/.test(byCheck(rows, 'talks through the Worker').detail));
     rows = await A.authorStatus(F, world({ pages: page(`${good}<p>Coached by Michael Stickler</p>`) }), { all: [S, F] });
     t('another author in VISIBLE copy FAILS', byCheck(rows, 'no other author on the page').status, 'FAIL');
+    {
+      // 🚨 The renumber of 2026-10-05 left these on their old numbers once: a wrong name on the
+      // FUNNEL page was reported under the grant workflow. Each page's check belongs to its own step.
+      const pageWith = 'authorName: "Freddy Davis", showActivation: true, COACH_CODE: "1043",<p>Coached by Michael Stickler</p>';
+      const G = { ...F, landingPageUrl: 'https://www.book-coach.ai/freddy-davis-coach-access', bookLandingUrl: 'https://leadershipbooks.com/pages/fd' };
+      const all3 = await A.authorStatus(G, world({ pages: { 'https://www.book-coach.ai/freddy-davis': pageWith, [G.landingPageUrl]: pageWith, [G.bookLandingUrl]: pageWith } }), { all: [S, G] });
+      const ST = await import('./steps.mjs');
+      t('🚨 a wrong name is reported on the step of the page it is on: coach page, Zipify, funnel',
+        all3.filter((r) => r.check === 'no other author on the page').map((r) => ST.stepById(r.step).title), ['Coach page', 'Zipify page', 'Funnel page']);
+
+      // 🚨 Every Add to Cart, not just "ours is there" (2026-10-06).
+      const FV = { ...G, shopifyVariantId: '54120408187194' };
+      const sales = (body) => A.authorStatus(FV, world({ pages: { [FV.bookLandingUrl]: body } }), { all: [S, FV] });
+      const cartRow = async (body) => (await sales(body)).find((r) => r.check === 'no Add to Cart link points elsewhere');
+      const good = '<a href="https://leadershipbooks.com/cart/54120408187194:1">ADD TO CART</a>';
+      t('only this author\'s cart link: passes', (await cartRow(good)).status, 'DONE');
+      const both = `${good}<a href="https://leadershipbooks.com/cart/54042631733562:1">ADD TO CART</a>`;
+      const r2 = await sales(both);
+      const c2 = r2.find((r) => r.check === 'no Add to Cart link points elsewhere');
+      t('🚨 a second button still on another author\'s bundle FAILS — and names whose bundle it is', [c2.status, c2.detail], ['FAIL', '/cart/54042631733562:1 → Michael Stickler\'s bundle']);
+      t('...while "ours is there" alone would have been only a note (a plain link)', r2.find((r) => r.check === "Add to Cart is this author's product button").status, 'WARN');
+      falsy('...and the same id is not reported a second time as hidden page data', r2.some((r) => r.check === 'no other author in SEO / page data' && /54042631733562/.test(r.detail)));
+      t('an unknown product FAILS, said plainly', (await cartRow(`${good}<a href="/cart/11111111111111:1">x</a>`)).detail, '/cart/11111111111111:1 → not a Book Coach bundle');
+      t('this author\'s bundle at the wrong quantity FAILS', (await cartRow('<a href="/cart/54120408187194:2">x</a>')).detail, '/cart/54120408187194:2 → adds 2, not 1');
+      // Zipify's "Product Listing" block, as cloned onto three live pages (2026-10-06).
+      const zform = (product, variant) => `<form method="post" data-zp-add-to-cart-form="" data-zp-link-type="cart" data-productid="${product}"><input type="hidden" name="product-id" value="${product}" /><select class="hidden noreplace" name="id" data-productid="${product}" aria-hidden="true"><option selected="selected" value="${variant}">Default Title</option></select></form>`;
+      // As on the live pages: no buy button of its own (only the +/- quantity), and the plain link is right.
+      const inertRows = await sales(`${good}${zform('10434147320122', '54042631733562')}`);
+      t('a product block with NO buy button of its own is not a payment problem: the Add to Cart check passes',
+        inertRows.find((r) => r.check === 'no Add to Cart link points elsewhere').status, 'DONE');
+      const blockNote = inertRows.find((r) => r.check === 'Zipify product block linked to another bundle');
+      t('...it is an optional note, naming whose bundle it is still linked to', [blockNote && blockNote.status, blockNote && blockNote.detail], ['WARN', 'Zipify product block (variant 54042631733562) → Michael Stickler\'s bundle']);
+      const liveForm = zform('10434147320122', '54042631733562').replace('</form>', '<button type="submit" data-zp-add-to-cart>Add to cart</button></form>');
+      const zipOther = await cartRow(`${good}${liveForm}`);
+      t('🚨 a product block WITH its own buy button, set to another author\'s bundle, FAILS — a buyer could press it', [zipOther.status, zipOther.detail], ['FAIL', 'Zipify product block (variant 54042631733562) → Michael Stickler\'s bundle']);
+      t('...while a block set to this author\'s own bundle passes', (await cartRow(`${good}${zform('10454698754362', '54120408187194')}`)).status, 'DONE');
+      // The Add to Cart is Zipify's Product block now (2026-10-12) — as on Freddy's, Sue's, Rob's, Joe's and Reinhard's live pages.
+      const FVP = { ...FV, shopifyProductId: '10454698754362' };
+      const btn = (cls = 'ADD TO CART') => zform('10454698754362', '54120408187194').replace('</form>', `<button type="submit" data-zp-add-to-cart>${cls}</button></form>`);
+      const pbRow = async (body) => (await A.authorStatus(FVP, world({ pages: { [FVP.bookLandingUrl]: body } }), { all: [S, FVP] })).find((r) => r.check === 'Add to Cart is this author\'s product button');
+      t('🔑 a Zipify product button on THIS author\'s bundle: done', (await pbRow(btn())).status, 'DONE');
+      t('..."BUY NOW" counts the same', (await pbRow(btn('BUY NOW'))).status, 'DONE');
+      t('only the old plain link: a note — it works, but it is not the house style any more', (await pbRow(good)).status, 'WARN');
+      t('a product block for this bundle but with no buy button of its own: nothing to press — wrong', (await pbRow(zform('10454698754362', '54120408187194'))).status, 'FAIL');
+      t('nothing that adds this bundle: wrong', (await pbRow('<p>no button</p>')).status, 'FAIL');
+      const withC = { ...FVP, collectionProductId: '777', collectionVariantId: '778' };
+      const both2 = `${btn()}${zform('777', '778').replace('</form>', '<button type="submit">ADD TO CART</button></form>')}`;
+      t('this author\'s OWN course collection button on the same page is not "another product"', A.wrongCartLinks(both2, withC, [S, withC]), []);
+      const otherC = { ...S, collectionProductId: '555', collectionVariantId: '556' };
+      t('...another author\'s collection is named as such', A.wrongCartLinks(zform('555', '556').replace('</form>', '<button type="submit">x</button></form>'), FVP, [otherC, FVP]).map((w) => w.what), ['Michael Stickler\'s course collection']);
+      t('a /cart/add button and a several-item cart link are read too', A.wrongCartLinks('<form action="/cart/add?id=54042631733562"></form><a href="/cart/54120408187194:1,99:1">x</a>', FV, [S, FV]).map((w) => w.link), ['/cart/99:1', '/cart/add?id=54042631733562']);
+      // The name only in the funnel's inherited JSON-LD (Sue Summers, 2026-10-05): a note, with the funnel's own fix.
+      const seo = 'authorName: "Freddy Davis", showActivation: true, COACH_CODE: "1043",<script type="application/ld+json">{"description":"A coach that knows Michael Stickler\'s work"}</script>';
+      const hid = await A.authorStatus(G, world({ pages: { [G.landingPageUrl]: seo } }), { all: [S, G] });
+      const note = hid.find((r) => r.check === 'no other author in SEO / page data' && ST.stepById(r.step).title === 'Funnel page');
+      t('a name only in the funnel\'s search data is a note on the funnel step, pointing at its SEO settings', [note && note.status, note && /SEO & AEO/.test(note.fix)], ['WARN', true]);
+    }
     rows = await A.authorStatus(F, world({ pages: page(`${good}<script>var x = "authorURL: /pages/michael-stickler-speakers-bureau"</script>`) }), { all: [S, F] });
     t('...only in a script is a WARN, not a FAIL', [byCheck(rows, 'no other author on the page').status, byCheck(rows, 'no other author in SEO / page data').status], ['DONE', 'WARN']);
     rows = await A.authorStatus(F, world({}), { all: [S, F] });
@@ -3488,8 +3546,8 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   console.log('\nauthor - summary + one failing reader');
   {
     const rows = await A.authorStatus(F, { ...world({}), catalog: async () => { throw new Error('Shopify down'); } }, { all: [S, F] });
-    truthy('a reader that throws becomes a FAIL row, not a crash', rows.some((r) => r.step === 3 && /Shopify down/.test(r.detail)));
-    truthy('...and the other steps still report', rows.some((r) => r.step === 10));
+    truthy('a reader that throws becomes a FAIL row, not a crash', rows.some((r) => r.step === STEP.shopify && /Shopify down/.test(r.detail)));
+    truthy('...and the other steps still report', rows.some((r) => r.step === 12));
     const sum = A.stepSummary([{ step: 2, status: 'DONE' }, { step: 2, status: 'WARN' }, { step: 3, status: 'MANUAL' }, { step: 3, status: 'FAIL' }]);
     t('worst row wins per step', [sum[2], sum[3], sum[4]], ['WARN', 'FAIL', 'TODO']);
   }
@@ -3506,7 +3564,9 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     truthy('an alias versionID becomes the 24-char draft id for the fallback',
       A.coachPageConfig({ ...R, projectID: '6a52da46bc446f70628c598c', versionID: 'main' }, { workerUrl: 'w' }).includes('VF_VERSION_ID: "6a52da46bc446f70628c598d"'));
     t('a 24-char versionID is used as-is', A.pageVersionId({ versionID: '6a3339b6eb283c59b70cfa53' }), '6a3339b6eb283c59b70cfa53');
-    truthy('the coach label is the page "bookTitle"', cfg.includes('bookTitle: "Faith Coach"'));
+    // The line under the author's name: the BOOK title by default (2026-10-05), not the coach label.
+    truthy('the page "bookTitle" line is the book\'s title by default', cfg.includes(`bookTitle: "${R.bookTitle}"`) && !cfg.includes('bookTitle: "Faith Coach"'));
+    truthy('...and whatever the dashboard\'s form sets instead', A.coachPageConfig(R, { workerUrl: 'w', subtitle: 'Faith Coach' }).includes('bookTitle: "Faith Coach"'));
     truthy('books render, and showBooks follows them', cfg.includes('{ title: "Running on Faith", url: "https://x/b" }') && cfg.includes('showBooks: true'));
     const tricky = A.coachPageConfig({ ...R, displayName: 'Jo "The" Smith' }, { workerUrl: 'https://w' });
     truthy('quotes in a name are escaped, not a syntax error', tricky.includes('authorName: "Jo \\"The\\" Smith"'));
@@ -3640,10 +3700,11 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
       health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null,
     });
     let rows = await A.authorStatus(coach, ctx([{ name: 'Book Coach — Grant My Coaches', status: 'published' }]), { all: [coach] });
-    t('step 4: an author with no course is served by the shared one', rows.find((r) => r.step === 4).status, 'DONE');
-    t('step 6: the ONE shared workflow, published, is DONE', rows.find((r) => r.step === 6).check, 'shared My Coaches grant workflow published');
+    t('step 6: an author with no course is served by the shared one', rows.find((r) => r.step === 6).status, 'DONE');
+    const grantId = (await import('./steps.mjs')).PIPELINE_STEPS.find((s) => s.title === 'Grant workflow').id;
+    t('grant workflow: the ONE shared workflow, published, is DONE', rows.find((r) => r.step === grantId).check, 'shared My Coaches grant workflow published');
     rows = await A.authorStatus(coach, ctx([{ name: 'Book Coach — Grant My Coaches', status: 'draft' }]), { all: [coach] });
-    t('...a draft shared workflow FAILS', rows.find((r) => r.step === 6).status, 'FAIL');
+    t('...a draft shared workflow FAILS', rows.find((r) => r.step === grantId).status, 'FAIL');
     const steps = remainingSteps({ entry: { ...coach, ghlProductId: 'P' }, slug: 'freddy-davis', priceId: 'X', sharedCourse: true });
     falsy('onboard no longer asks for a per-author course or grant workflow', /Offer FREE|Grant Course \(/.test(steps));
     truthy('...the classic checklist is unchanged without it', /Offer FREE/.test(remainingSteps({ entry: { ...coach, ghlProductId: 'P' }, slug: 'freddy-davis', priceId: 'X' })));
@@ -3763,10 +3824,11 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
   const R = { code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', bookTitle: 'Running on Faith' };
 
   // A scripted Shopify: answers by the first mutation/query name in the document.
-  const fakeShop = ({ failOn = null, userErrorOn = null, publications = [{ id: 'gid://shopify/Publication/1', name: 'Online Store' }], collection = true, orderTags = ['delivered-manual', 'coach-test'] } = {}) => {
+  const fakeShop = ({ failOn = null, userErrorOn = null, publications = [{ id: 'gid://shopify/Publication/1', name: 'Online Store' }], collection = true, orderTags = ['delivered-manual', 'coach-test'],
+    mediaNode = { status: 'READY', mediaErrors: [], image: { width: 2400, height: 3600 } } } = {}) => {
     const calls = [];
     const gql = async (query, vars) => {
-      const op = /(productCreate|productVariantsBulkUpdate|publications|publishablePublish|collections|collectionAddProducts|draftOrderCreate|draftOrderComplete|orderCancel)/.exec(query)[1];
+      const op = /(stagedUploadsCreate|productCreate|productVariantsBulkUpdate|publications|publishablePublish|collections|collectionAddProducts|draftOrderCreate|draftOrderComplete|orderCancel|media\(first)/.exec(query)[1];
       calls.push({ op, vars, query });
       if (op === failOn) throw new Error(`Shopify 500 on ${op}`);
       const ue = op === userErrorOn ? [{ field: ['x'], message: 'nope' }] : [];
@@ -3780,6 +3842,8 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
         case 'draftOrderCreate': return { draftOrderCreate: { draftOrder: { id: 'gid://shopify/DraftOrder/5' }, userErrors: ue } };
         case 'draftOrderComplete': return { draftOrderComplete: { draftOrder: { order: { id: 'gid://shopify/Order/777', name: '#4300', tags: orderTags } }, userErrors: ue } };
         case 'orderCancel': return { orderCancel: { orderCancelUserErrors: ue } };
+        case 'stagedUploadsCreate': return { stagedUploadsCreate: { stagedTargets: [{ url: 'https://shopify-staged-uploads.storage.googleapis.com/', resourceUrl: 'https://shopify-staged-uploads.storage.googleapis.com/tmp/1/cover.jpg', parameters: [{ name: 'key', value: 'tmp/1/cover.jpg' }, { name: 'policy', value: 'P' }] }], userErrors: ue } };
+        case 'media(first': return { product: { media: { nodes: [mediaNode] } } };
       }
     };
     return { gql, calls, ops: () => calls.map((c) => c.op) };
@@ -3826,7 +3890,7 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     const s2 = fakeShop();
     await SH.createBundle(s2.gql, { coach: R, price: '29.95' });
     const v2 = s2.calls[1].vars.variants[0];
-    t('without them: price + shipping only, no empty SKU or weight sent', [v2.price, v2.inventoryItem], ['29.95', { requiresShipping: true }]);
+    t('without them: no empty SKU — and a paperback weight + US origin, which selling abroad needs', [v2.price, v2.inventoryItem], ['29.95', { requiresShipping: true, measurement: { weight: { value: 0.95, unit: 'POUNDS' } }, countryCodeOfOrigin: 'US' }]);
     t('published to the ONLINE STORE (or the cart link 404s)', s.calls[3].vars.input, [{ publicationId: 'gid://shopify/Publication/1' }]);
   }
   {
@@ -3842,6 +3906,167 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     const s = fakeShop({ collection: false });
     const r = await SH.createBundle(s.gql, opts);
     t('a missing coach-bundles collection is skipped, not fatal (it is insurance)', [r.productId, s.ops().includes('collectionAddProducts')], ['111', false]);
+  }
+
+  console.log('\nshopify - product image (a file or a link, uploaded full size)');
+  {
+    // Minimal real headers for each format the store takes.
+    const png = (w, h) => { const b = Buffer.alloc(33); b.writeUInt32BE(0x89504e47, 0); b.writeUInt32BE(0x0d0a1a0a, 4); b.writeUInt32BE(13, 8); b.write('IHDR', 12, 'latin1'); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
+    const jpg = (w, h) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, ...Buffer.from('JFIF\0'), 1, 1, 0, 0, 1, 0, 1, 0, 0,
+      0xff, 0xc4, 0, 4, 0, 0, // a DHT segment before the frame: skipped, not read as the size
+      0xff, 0xc2, 0, 17, 8, h >> 8, h & 255, w >> 8, w & 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xd9]);
+    const gif = (w, h) => { const b = Buffer.alloc(16); b.write('GIF89a', 0, 'latin1'); b.writeUInt16LE(w, 6); b.writeUInt16LE(h, 8); return b; };
+    const webp = (w, h) => { const b = Buffer.alloc(34); b.write('RIFF', 0, 'latin1'); b.writeUInt32LE(26, 4); b.write('WEBPVP8X', 8, 'latin1'); b.writeUInt32LE(10, 16); b.writeUIntLE(w - 1, 24, 3); b.writeUIntLE(h - 1, 27, 3); return b; };
+    t('PNG: type and size from its header', SH.imageInfo(png(2400, 3600)), { mime: 'image/png', ext: 'png', width: 2400, height: 3600 });
+    t('JPEG (progressive, after a DHT segment)', SH.imageInfo(jpg(3000, 2000)), { mime: 'image/jpeg', ext: 'jpg', width: 3000, height: 2000 });
+    t('GIF', SH.imageInfo(gif(640, 480)), { mime: 'image/gif', ext: 'gif', width: 640, height: 480 });
+    t('WebP', SH.imageInfo(webp(2048, 2048)), { mime: 'image/webp', ext: 'webp', width: 2048, height: 2048 });
+    t('anything else is not an image', SH.imageInfo(Buffer.from('<!doctype html><html>')), null);
+
+    t('"Copy as path" quotes are dropped', SH.cleanImagePath('  "C:\\Pics\\cover.jpg" '), 'C:\\Pics\\cover.jpg');
+    t('a Google Drive share link becomes the file', SH.directImageUrl('https://drive.google.com/file/d/AbC_12-x/view?usp=sharing'), 'https://drive.google.com/uc?export=download&id=AbC_12-x');
+    t('a Dropbox share link becomes the file', SH.directImageUrl('https://www.dropbox.com/s/k/cover.jpg?dl=0'), 'https://www.dropbox.com/s/k/cover.jpg?dl=1');
+    t('any other link is used as given', SH.directImageUrl('https://cdn.example.com/a.png'), 'https://cdn.example.com/a.png');
+
+    const files = { 'C:\\Pics\\Rick Cover.JPG': jpg(2400, 3600), 'C:\\Pics\\small.png': png(800, 800), 'C:\\Pics\\huge.png': png(6000, 6000), 'C:\\Pics\\fake.jpg': Buffer.from('not an image') };
+    const fsx = { existsImpl: (p) => p in files, readImpl: (p) => files[p] };
+    const ok = await SH.loadProductImage({ file: '"C:\\Pics\\Rick Cover.JPG"' }, fsx);
+    t('a file: read as is, every byte', [ok.problems, ok.image.bytes.length, ok.image.width, ok.image.height, ok.image.mime], [[], files['C:\\Pics\\Rick Cover.JPG'].length, 2400, 3600, 'image/jpeg']);
+    t('...named from the file, made safe', ok.image.filename, 'Rick-Cover.jpg');
+    t('...full size, no note', ok.notes, []);
+    const small = await SH.loadProductImage({ file: 'C:\\Pics\\small.png' }, fsx);
+    truthy('under 2048 px: uploaded, with a note that it is not HD', small.image && small.notes.some((n) => /800 × 800.*2048/.test(n)));
+    truthy('over 20 megapixels: refused', (await SH.loadProductImage({ file: 'C:\\Pics\\huge.png' }, fsx)).problems.some((p) => /20 megapixels/.test(p)));
+    truthy('a .jpg that is not an image: refused', (await SH.loadProductImage({ file: 'C:\\Pics\\fake.jpg' }, fsx)).problems.some((p) => /not a JPG/.test(p)));
+    truthy('a missing file: refused', (await SH.loadProductImage({ file: 'C:\\Pics\\gone.jpg' }, fsx)).problems.some((p) => /no file/.test(p)));
+    truthy('a relative path: refused', (await SH.loadProductImage({ file: 'cover.jpg' }, fsx)).problems.some((p) => /full path/.test(p)));
+    truthy('a file AND a link: refused', (await SH.loadProductImage({ file: 'C:\\Pics\\small.png', url: 'https://x/a.png' }, fsx)).problems.some((p) => /not both/.test(p)));
+    t('neither: no image, no problem', await SH.loadProductImage({}), { image: null, problems: [], notes: [] });
+
+    const got = [];
+    const web = (body, { status = 200, url } = {}) => async (u) => { got.push(u); return { ok: status === 200, status, url: url || u, headers: new Map(), arrayBuffer: async () => body }; };
+    const fromLink = await SH.loadProductImage({ url: 'https://drive.google.com/file/d/ID1/view' }, { fetchImpl: web(png(2400, 2400), { url: 'https://cdn.example.com/x/cover.png' }) });
+    t('a link: downloaded here, the share link turned into the file', [got[0], fromLink.image.width, fromLink.image.filename], ['https://drive.google.com/uc?export=download&id=ID1', 2400, 'cover.png']);
+    truthy('a link to a web page, not the picture: refused, saying how to get the picture',
+      (await SH.loadProductImage({ url: 'https://example.com/gallery' }, { fetchImpl: web(Buffer.from('<!DOCTYPE html><p>')) })).problems.some((p) => /Copy image address/.test(p)));
+    truthy('a link that answers 404: refused', (await SH.loadProductImage({ url: 'https://example.com/a.png' }, { fetchImpl: web(Buffer.alloc(0), { status: 404 }) })).problems.some((p) => /404/.test(p)));
+    truthy('not https: refused', (await SH.loadProductImage({ url: 'C:\\a.png' })).problems.some((p) => /https/.test(p)));
+
+    // The upload: staged first, then the product is created WITH it, then its processing is awaited.
+    const posts = [];
+    const storage = async (u, o) => { posts.push({ u, o }); return { ok: true, status: 204 }; };
+    const s = fakeShop();
+    const r = await SH.createBundle(s.gql, { ...opts, image: ok.image }, { fetchImpl: storage, mediaWait: { sleep: async () => {} } });
+    t('the image is uploaded BEFORE the product exists, checked AFTER everything else',
+      s.ops(), ['stagedUploadsCreate', 'productCreate', 'productVariantsBulkUpdate', 'publications', 'publishablePublish', 'collections', 'collectionAddProducts', 'media(first']);
+    t('staged as an IMAGE, with its real type and size', s.calls[0].vars.input[0], { resource: 'IMAGE', filename: 'Rick-Cover.jpg', mimeType: 'image/jpeg', httpMethod: 'POST', fileSize: String(ok.image.bytes.length) });
+    const sent = posts[0].o.body.get('file');
+    t('the original bytes go up untouched (no resize, no re-encode)', Buffer.from(await sent.arrayBuffer()).equals(ok.image.bytes), true);
+    t('...the file field last, after Shopify\'s signed fields', [...posts[0].o.body.keys()], ['key', 'policy', 'file']);
+    t('the product is created with it, alt = the product title', s.calls[1].vars.media,
+      [{ originalSource: 'https://shopify-staged-uploads.storage.googleapis.com/tmp/1/cover.jpg', mediaContentType: 'IMAGE', alt: 'Running on Faith [Rick Meyer] + Your Personal AI Coach' }]);
+    t('...and reported on the product at full size', r.image, { status: 'READY', width: 2400, height: 3600, errors: [] });
+
+    const plain = fakeShop();
+    await SH.createBundle(plain.gql, opts);
+    t('no image: nothing staged, an empty media list, no wait', [plain.ops().includes('stagedUploadsCreate'), plain.calls[0].vars.media, plain.ops().includes('media(first')], [false, [], false]);
+
+    const bad = fakeShop({ mediaNode: { status: 'FAILED', mediaErrors: [{ message: 'x', details: 'Image is corrupt' }] } });
+    const rb = await SH.createBundle(bad.gql, { ...opts, image: ok.image }, { fetchImpl: storage, mediaWait: { sleep: async () => {} } });
+    t('Shopify failing to process the image does NOT lose the product: its ids still come back', [rb.productId, rb.variantId, rb.image.status, rb.image.errors], ['111', '222', 'FAILED', ['Image is corrupt']]);
+
+    let err = null;
+    try { await SH.createBundle(fakeShop().gql, { ...opts, image: ok.image }, { fetchImpl: async () => ({ ok: false, status: 403 }) }); } catch (e) { err = e; }
+    truthy('a failed upload stops BEFORE the product is made — nothing left in the store', err && /403/.test(err.message) && !err.created.productId);
+
+    // A product that already exists (made by hand): only the image is added.
+    const existing = ({ has = ['gid://shopify/MediaImage/1'], product = true, after = 'READY' } = {}) => {
+      const calls = [];
+      let updated = false;
+      const gql = async (query, vars) => {
+        const op = /(stagedUploadsCreate|productUpdate|media\(first)/.exec(query)[1];
+        calls.push({ op, vars });
+        if (op === 'stagedUploadsCreate') return { stagedUploadsCreate: { stagedTargets: [{ url: 'https://up/', resourceUrl: 'https://up/tmp/c.jpg', parameters: [] }], userErrors: [] } };
+        if (op === 'productUpdate') { updated = true; return { productUpdate: { product: { id: vars.product.id }, userErrors: [] } }; }
+        if (!product) return { product: null };
+        const old = has.map((id) => ({ id, status: 'READY', mediaErrors: [], image: { width: 10, height: 10 } }));
+        return { product: { title: 'Coached by the Bible [Reinhard Klett] + Your Personal AI Coach', media: { nodes: updated ? [...old, { id: 'gid://shopify/MediaImage/2', status: after, mediaErrors: [], image: { width: 2400, height: 3600 } }] : old } } };
+      };
+      return { gql, calls, ops: () => calls.map((c) => c.op) };
+    };
+    const e = existing();
+    const added = await SH.addProductImage(e.gql, { productId: '15419105935674', image: ok.image }, { fetchImpl: storage, mediaWait: { sleep: async () => {} } });
+    t('an existing product: read it, upload, add — nothing else', e.ops(), ['media(first', 'stagedUploadsCreate', 'productUpdate', 'media(first']);
+    t('...only the image is sent: the product id and the media, no title/price/status', [Object.keys(e.calls[2].vars.product), e.calls[2].vars.media[0].mediaContentType], [['id'], 'IMAGE']);
+    t('...alt = the product\'s OWN title (a hand-made product may be named differently)', e.calls[2].vars.media[0].alt, 'Coached by the Bible [Reinhard Klett] + Your Personal AI Coach');
+    t('...and the NEW image is the one reported, not the picture it already had', added, { status: 'READY', width: 2400, height: 3600, errors: [] });
+    let gone = null;
+    const e2 = existing({ product: false });
+    try { await SH.addProductImage(e2.gql, { productId: '999', image: ok.image }, { fetchImpl: storage }); } catch (x) { gone = x; }
+    truthy('a product id Shopify does not know: refused before uploading anything', gone && /not in Shopify/.test(gone.message) && !e2.ops().includes('stagedUploadsCreate'));
+
+  console.log('\nshopify - the course collection product (optional step, 2026-10-12)');
+  {
+    t('its title: "<Book title> - Collection Bundle"', SH.collectionTitle({ bookTitle: 'Coached by the Bible' }), 'Coached by the Bible - Collection Bundle');
+    t('a complete request passes', SH.collectionProblems({ coach: R, price: '97.00' }), []);
+    truthy('one that already exists is refused (create, never edit)', SH.collectionProblems({ coach: { ...R, collectionProductId: '5' }, price: '97.00' }).some((p) => /never edits/.test(p)));
+    truthy('a malformed price is refused', SH.collectionProblems({ coach: R, price: '97 dollars' }).some((p) => /97\.00/.test(p)));
+    const png = Buffer.alloc(33); png.writeUInt32BE(0x89504e47, 0); png.writeUInt32BE(2400, 16); png.writeUInt32BE(2400, 20);
+    const img = { bytes: png, mime: 'image/png', ext: 'png', width: 2400, height: 2400, filename: 'c.png', source: 'x' };
+    const s = fakeShop();
+    const r = await SH.createCollectionProduct(s.gql, { coach: R, price: '97.00', image: img }, { fetchImpl: async () => ({ ok: true, status: 204 }), mediaWait: { sleep: async () => {} } });
+    t('image staged first, then create, price, publish — and its image awaited', s.ops(), ['stagedUploadsCreate', 'productCreate', 'productVariantsBulkUpdate', 'publications', 'publishablePublish', 'media(first']);
+    const made = s.calls[1].vars.product;
+    t('created with the collection title and type, and NO tag', [made.title, made.productType, made.tags], ['Running on Faith - Collection Bundle', 'Course Collection', undefined]);
+    falsy('🚨 never in the coach-bundles collection — that is how a bundle is recognised', s.ops().includes('collectionAddProducts') || JSON.stringify(s.calls).includes('coach-bundles'));
+    // Selling abroad (Managed Markets) needs a category and a description, or the product is
+    // blocked in every other country — "188 restrictions" (2026-10-12).
+    t('🔑 the collection product gets the Educational Services category and a standard description', [made.category, /Running on Faith<\/strong> — the complete learning system by Rick Meyer/.test(made.descriptionHtml)], [SH.EDUCATIONAL_SERVICES, true]);
+    falsy('...which never promises the coach (buying it gives none yet — plan 02)', /coach|BookCoach/i.test(made.descriptionHtml));
+    const sb = fakeShop();
+    await SH.createBundle(sb.gql, opts);
+    const bundleIn = sb.calls[0].vars.product;
+    t('🔑 the bundle (it SHIPS): Print Books + description — not a service category (proven on Reinhard Klett, 2026-10-12)', [bundleIn.category, /Running on Faith<\/strong> by Rick Meyer, plus 10 days of your personal BookCoach AI/.test(bundleIn.descriptionHtml), /\$59 per month/.test(bundleIn.descriptionHtml)], [SH.PRINT_BOOKS, true, true]);
+    const ii = sb.calls[1].vars.variants[0].inventoryItem;
+    t('🔑 ...and a weight and an origin — the change that took it from 188 to 0', [ii.measurement.weight, ii.countryCodeOfOrigin], [{ value: 450, unit: 'GRAMS' }, 'US']);
+    const sn = fakeShop();
+    await SH.createBundle(sn.gql, { coach: R, price: '29.95' });
+    t('...with no weight given: a paperback\'s', sn.calls[1].vars.variants[0].inventoryItem.measurement.weight, SH.DEFAULT_WEIGHT);
+    truthy('a name with "&" or "<" is written safely into the description', SH.bundleDescription({ bookTitle: 'Q & <A>', displayName: 'Jo' }).includes('Q &amp; &lt;A&gt;'));
+    t('...and "James" becomes "James’", not "James’s"', /James’ teaching/.test(SH.bundleDescription({ bookTitle: 'B', displayName: 'Tom James' })), true);
+    const lf = SH.listingFixes({ category: null, descriptionHtml: '', variants: { nodes: [{ price: '29.95' }] } }, '<p>D</p>');
+    const shipsBare = { category: null, descriptionHtml: '', variants: { nodes: [{ id: 'V1', price: '29.95', inventoryItem: { requiresShipping: true, countryCodeOfOrigin: null, measurement: { weight: { value: 0 } } } }] } };
+    const fx = SH.listingFixes(shipsBare, '<p>D</p>');
+    t('an existing product that ships: Print Books, the description, a weight and US origin', [fx.change.product, fx.change.variants], [{ category: SH.PRINT_BOOKS, descriptionHtml: '<p>D</p>' }, [{ id: 'V1', inventoryItem: { measurement: { weight: SH.DEFAULT_WEIGHT }, countryCodeOfOrigin: 'US' } }]]);
+    const asService = SH.listingFixes({ ...shipsBare, category: { id: SH.EDUCATIONAL_SERVICES }, descriptionHtml: '<p>Theirs</p>' }, '<p>D</p>');
+    t('...one that ships but is filed as a SERVICE is moved to Print Books (the proven cause) — its own description kept', asService.change.product, { category: SH.PRINT_BOOKS });
+    const full = { category: { id: 'gid://shopify/TaxonomyCategory/me-1' }, descriptionHtml: '<p>x</p>', variants: { nodes: [{ id: 'V', price: '19.99', inventoryItem: { requiresShipping: true, countryCodeOfOrigin: 'GB', measurement: { weight: { value: 1.2 } } } }] } };
+    t('...nothing else already set is overwritten (a book category, a weight, another origin)', SH.listingFixes(full, '<p>D</p>').change, { product: {}, variants: [] });
+    const digital = SH.listingFixes({ category: null, descriptionHtml: '', variants: { nodes: [{ id: 'V', price: '97', inventoryItem: { requiresShipping: false } }] } }, '<p>D</p>');
+    t('a product that does NOT ship (digital): Educational Services + description, no weight', [digital.change.product.category, digital.change.variants], [SH.EDUCATIONAL_SERVICES, []]);
+    truthy('...and a $0 price is reported — it blocks on its own', SH.listingFixes({ ...full, variants: { nodes: [{ ...full.variants.nodes[0], price: '0.00' }] } }, '').notes.some((n) => /\$0\.00/.test(n)));
+    t('$97, inventory NOT tracked, no shipping address', s.calls[2].vars.variants[0], { id: 'gid://shopify/ProductVariant/222', price: '97.00', inventoryItem: { tracked: false, requiresShipping: false } });
+    t('returns its ids and the image result', [r.productId, r.variantId, r.image.status], ['111', '222', 'READY']);
+    let err = null;
+    try { await SH.createCollectionProduct(fakeShop({ userErrorOn: 'productVariantsBulkUpdate' }).gql, { coach: R }); } catch (x) { err = x; }
+    t('a failure part-way says what already exists', err && err.created.productId, '111');
+
+    // The live check: optional, and read from the public catalogue.
+    const A = await import('./lib-author.mjs');
+    const S = (await import('./steps.mjs')).STEP;
+    const base = { locationId: 'L', cfg: {}, fetchText: async () => ({ status: 404, text: '' }), ghl: async (p) => (p.startsWith('/workflows/') ? { workflows: [] } : p === '/contacts/search' ? { contacts: [] } : {}), health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null };
+    const rowsOf = async (coach, catalog) => (await A.authorStatus(coach, { ...base, catalog: async () => catalog }, { all: [coach] })).filter((x) => x.step === S.collection);
+    t('no collection product: one row a person decides — make it, or sign off "none"', (await rowsOf(R, new Map())).map((x) => [x.check, x.status]), [['collection product', 'MANUAL']]);
+    const withIt = { ...R, collectionProductId: '777' };
+    t('recorded and on the store, with a picture: done — its variant asked for if not saved', (await rowsOf(withIt, new Map([['777', { title: 'T', images: [{}], variants: [{ id: 888 }] }]]))).map((x) => [x.check, x.status]),
+      [['collection product', 'DONE'], ['collection variant recorded', 'TODO']]);
+    t('...without a picture: a note', (await rowsOf({ ...withIt, collectionVariantId: '888' }, new Map([['777', { title: 'T', images: [], variants: [{ id: 888 }] }]]))).map((x) => [x.check, x.status]),
+      [['collection product', 'DONE'], ['collection image', 'WARN']]);
+    t('recorded but not on the store: wrong', (await rowsOf(withIt, new Map())).map((x) => x.status), ['FAIL']);
+    const gate = (await A.authorStatus(R, { ...base, catalog: async () => new Map() }, { all: [R] })).find((x) => x.check === 'steps 0-12 read green');
+    falsy('🚨 All checks never waits on it — it is optional', gate.detail.split(/[^0-9]+/).includes(String(S.collection)));
+    falsy('🚨 its ids never reach KV — an order for it must start no trial (plan 02 would change that)', 'collectionProductId' in registryValue({ name: 'X', collectionProductId: '1', collectionVariantId: '2' }));
+  }
   }
 
   console.log('\nshopify - test order');
@@ -3862,6 +4087,298 @@ console.log('reconcile - subscription tagging is wired in, and dry runs stay dry
     try { await SH.cancelTestOrder(fakeShop({ userErrorOn: 'orderCancel' }).gql, 'x'); } catch (e) { err = e; }
     truthy('a cancel userError (its own field name) still throws', err && /orderCancel/.test(err.message));
   }
+}
+
+/* ---------------------------------------------------------------------------
+ * the step list (steps.mjs) — one numbering for every tool
+ * The pipeline tracker and dashboard that read it live in ../BookCoach Author Dashboard
+ * and carry their own tests (npm test there).
+ * ------------------------------------------------------------------------- */
+{
+  const ST = await import('./steps.mjs');
+  const A = await import('./lib-author.mjs');
+  console.log('\nsteps - one numbering');
+  t('steps are 0-16, in order, no gaps', ST.PIPELINE_STEPS.map((s) => s.id), Array.from({ length: 17 }, (_, i) => i));
+  t('🔑 the coach page comes right after the Voiceflow work, before the author is created (2026-10-05)', [ST.stepById(2).title, ST.stepById(3).title, ST.stepById(2).needs], ['Coach page', 'GHL + registry', [1]]);
+  t('🔑 the Voiceflow coach and its IDs are ONE step, with no sign-off (2026-10-12)', [ST.stepById(1).title, ST.stepById(1).signoff, ST.PIPELINE_STEPS.some((s) => /Voiceflow IDs/.test(s.title))], ['Voiceflow coach + IDs', undefined, false]);
+  t('🔑 the optional Course Collection step sits between Zipify and its address (2026-10-12)', [7, 8, 9].map((n) => ST.stepById(n).title), ['Zipify page', 'Course Collection + Bundle Image', 'Sales page URL']);
+  truthy('...it is optional, and nothing waits on it — not even All checks', ST.stepById(8).optional === true && ST.PIPELINE_STEPS.every((s) => !s.needs.includes(8)));
+  t('every step has a fixed key, and STEP maps each key to its number', ST.PIPELINE_STEPS.every((s) => ST.STEP[s.key] === s.id) && new Set(ST.PIPELINE_STEPS.map((s) => s.key)).size === 17, true);
+  t('the 2026-10-12 map: both old Voiceflow steps → 1, 3-8 up one, 9+ unchanged', [1, 2, 3, 8, 9, 16].map((n) => ST.RENUMBER_2026_10_12[n]), [1, 1, 2, 7, 9, 16]);
+  falsy('🚨 lib-author never files a row under a bare number — only a step key', /\brow\(\s*\d/.test(readFileSync(new URL('./lib-author.mjs', import.meta.url), 'utf8')));
+  t('after launch continues the numbering: 17-25', ST.AFTER_LAUNCH.map((s) => s.id), Array.from({ length: 9 }, (_, i) => 17 + i));
+  truthy('needs only ever point at LOWER steps', ST.PIPELINE_STEPS.every((s) => s.needs.every((n) => n < s.id)));
+  t('lib-author numbers its rows from the same list', A.STEPS, ST.STEPS);
+  const blank = { code: '1099', name: 'New Author' };
+  const ctx = {
+    locationId: 'L', cfg: {},
+    fetchText: async () => ({ status: 404, text: '' }), catalog: async () => new Map(),
+    ghl: async (p) => (p.startsWith('/workflows/') ? { workflows: [] } : p === '/contacts/search' ? { contacts: [] } : {}),
+    health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null,
+  };
+  const rows = await A.authorStatus(blank, ctx, { all: [blank] });
+  const ids = new Set(ST.PIPELINE_STEPS.map((s) => s.id));
+  truthy('🚨 every row authorStatus produces lands in a step of steps.mjs', rows.every((r) => ids.has(r.step)));
+  t('every step 0-16 gets at least one row', [...ids].filter((id) => !rows.some((r) => r.step === id)), []);
+  {
+    const { migrateSignoffs } = await import('./migrate-signoffs.mjs');
+    const built = { at: 'a', checks: ['the coach is built and answers as the author'] };
+    const offer = { at: 'b', checks: ['Offer is Free and unlisted'] };
+    const trig = { at: 'c', checks: ['triggers on this coach\'s tag'] };
+    const { state, changes } = migrateSignoffs({ 1001: { lastVerify: { passed: true }, signoffs: { 1: built, 6: offer, 11: trig } }, 1005: { signoffs: { 1: built } } });
+    t('the 2026-10-12 sign-off move: "coach is built" dropped, Course360 6 → 5, the grant workflow stays 11', state['1001'].signoffs, { 5: offer, 11: trig });
+    t('...lastVerify untouched, and each author marked done', [state['1001'].lastVerify.passed, state['1005'].renumbered, state['1005'].signoffs], [true, '2026-10-12', {}]);
+    t('...a second run changes nothing', migrateSignoffs(state).changes, []);
+    truthy('...and it says what it did', changes.length === 3);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * finding an author by name (lib-find.mjs) — the code stays the ID, nobody types it
+ * ------------------------------------------------------------------------- */
+{
+  const { findCoach } = await import('./lib-find.mjs');
+  const list = [
+    { code: '1042', name: 'Micheal Stickler', displayName: 'Michael Stickler', slug: 'michael-stickler', aliases: ['Micheal Stickler', 'Michael Stickler', 'Mike Stickler', 'Stickler'] },
+    { code: '1043', name: 'Freddy Davis', displayName: 'Freddy Davis', slug: 'freddy-davis', aliases: ['Freddy Davis', 'Freddy', 'Davis'] },
+    { code: '1044', name: 'Rick Meyer', displayName: 'Rick Meyer', ghlTag: 'bookcoach-rick-meyer-active' },
+    { code: '1045', name: 'Micheal Hinkle', displayName: 'Michael Hinkle', slug: 'michael-hinkle' },
+    { code: '1046', name: 'Patrick Lee', displayName: 'Patrick Lee', slug: 'patrick-lee' },
+  ];
+  const who = (q) => { const r = findCoach(list, q); return r.coach ? r.coach.code : `PROBLEM: ${r.problem}`; };
+  console.log('\nfind an author - by code, slug or name');
+  t('the code still works', who('1043'), '1043');
+  t('the slug', who('freddy-davis'), '1043');
+  t('the name, any case', who('FREDDY davis'), '1043');
+  t('a first name that is an alias', who('freddy'), '1043');
+  t('the internal spelling finds the same author', who('Micheal Stickler'), '1042');
+  t('...and so does the display spelling', who('Michael Stickler'), '1042');
+  t('a surname alone, when it is unique', who('stickler'), '1042');
+  t('a part of the name, as whole words', who('rick'), '1044');
+  t('the slug recovered from the tag when none is recorded', who('rick-meyer'), '1044');
+  truthy('🚨 a name that fits two authors is REFUSED, listing both — never a guess', /fits more than one author[\s\S]*1042[\s\S]*1045/.test(who('michael')));
+  truthy('"rick" never matches "Patrick" — whole words only', !/1046/.test(who('rick')));
+  truthy('a guess under three letters is not tried', /no author matches/.test(who('ri')));
+  truthy('no match says so, and lists who exists', /no author matches[\s\S]*1043 Freddy Davis/.test(who('nobody')));
+  truthy('a missing answer asks which author', /which author/.test(who('')));
+}
+
+/* ---------------------------------------------------------------------------
+ * renumbered coaches (2026-10-02: 1042 -> 1001 ...) — old codes keep working
+ * ------------------------------------------------------------------------- */
+{
+  const { loadRegistry, getCoach, canonicalCode, codesForTags, resolveEntitledCoach, pickEntitledCode, sweepExpiredTrials } = __test;
+  const realFetch = globalThis.fetch;
+  const mk = async () => {
+    __resetCaches();
+    const kv = fakeKV();
+    await kv.put('coach:1001', JSON.stringify({ name: 'Micheal Stickler', ghlTag: 'bookcoach-micheal-stickler-active', formerCodes: ['1042'] }));
+    // The old entry, as it sits in KV between a push and its deletion.
+    await kv.put('coach:1042', JSON.stringify({ name: 'Micheal Stickler', ghlTag: 'bookcoach-micheal-stickler-active' }));
+    await kv.put('coach:1002', JSON.stringify({ name: 'Freddy Davis', ghlTag: 'bookcoach-freddy-davis-active', formerCodes: ['1043'] }));
+    return { COACH_KV: kv, GHL_API_TOKEN: 'tok', GHL_LOCATION_ID: 'loc' };
+  };
+
+  console.log('\nrenumbered coaches - the old code still finds the author');
+  {
+    const env = await mk();
+    const reg = await loadRegistry(env, { force: true });
+    t('🔑 the old coach:1042 entry is ignored — the author is in the registry ONCE', [...reg.keys()].sort(), ['1001', '1002']);
+    t('the old code finds the author by the new code', (await getCoach(env, '1042')).code, '1001');
+    t('the new code finds them too', (await getCoach(env, '1001')).code, '1001');
+    t('an old code is turned into the new one', canonicalCode(reg, '1043'), '1002');
+    t('an unknown code stays unknown', await getCoach(env, '1099'), null);
+    t('🔑 a tag maps to the NEW code only — never both, which would ask "which coach?"', await codesForTags(env, ['bookcoach-micheal-stickler-active']), ['1001']);
+    t('a lease written before the renumber (old code) still routes', (await resolveEntitledCoach(env, 'hello', ['1042'])).code, '1001');
+    t('a web page still sending the old COACH_CODE gets that coach', pickEntitledCode({ codes: ['1001', '1002'] }, '1043', reg), '1002');
+  }
+
+  console.log('\nrenumbered coaches - a trial recorded under the old code still ends');
+  {
+    const env = await mk();
+    await env.COACH_KV.put('trial:c1:1042', JSON.stringify({ contactId: 'c1', code: '1042', startedAt: '2026-09-01', expiresAt: '2026-09-11T00:00:00.000Z', source: 'test' }));
+    const calls = [];
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      if (String(url).includes('/tags')) return new Response(JSON.stringify({ tags: [] }), { status: 200 });
+      return new Response('{"succeded":true}', { status: 200 });
+    };
+    let r;
+    try { r = await sweepExpiredTrials(env, { trialExpiryMode: 'on' }); } finally { globalThis.fetch = realFetch; }
+    t('🚨 it expires — it is NOT taken for an orphan and dropped (which would leave the tag on forever)', [r.expired, r.orphans], [1, 0]);
+    truthy('...and the right tag is removed', calls.some((c) => c.method === 'DELETE' && JSON.stringify(c.body).includes('bookcoach-micheal-stickler-active')));
+  }
+
+  console.log('\nrenumbered coaches - the registry rules');
+  {
+    const base = [
+      { code: '1001', index: 0, formerCodes: ['1042'] },
+      { code: '1002', index: 1, formerCodes: ['1043'] },
+    ];
+    t('valid former codes pass', coachProblems(base), []);
+    truthy('a former code that is another coach\'s CURRENT code is refused', coachProblems([{ ...base[0], formerCodes: ['1002'] }, base[1]]).some((p) => /CURRENT code/.test(p)));
+    truthy('two coaches claiming the same former code is refused', coachProblems([base[0], { ...base[1], formerCodes: ['1042'] }]).some((p) => /also a former code/.test(p)));
+    truthy('a former code must be four digits', coachProblems([{ ...base[0], formerCodes: ['42'] }]).some((p) => /four-digit/.test(p)));
+    truthy('formerCodes reaches KV with the coach', 'formerCodes' in registryValue({ code: '1001', name: 'x', formerCodes: ['1042'] }));
+    const { findCoach } = await import('./lib-find.mjs');
+    t('the old code finds the author in the tools too', findCoach([{ code: '1001', name: 'Micheal Stickler', formerCodes: ['1042'] }], '1042').coach.code, '1001');
+  }
+}
+
+/* a coach page made before the renumber still carries the old code — that works */
+{
+  const A = await import('./lib-author.mjs');
+  const coach = { code: '1002', name: 'Freddy Davis', displayName: 'Freddy Davis', slug: 'freddy-davis', formerCodes: ['1043'] };
+  const ctx = {
+    locationId: 'L', cfg: {},
+    fetchText: async (u) => (u === 'https://www.book-coach.ai/freddy-davis' ? { status: 200, text: 'authorName: "Freddy Davis", showActivation: true, COACH_CODE: "1043",' } : { status: 404, text: '' }),
+    catalog: async () => new Map(), ghl: async (p) => (p.startsWith('/workflows/') ? { workflows: [] } : { contacts: [] }),
+    health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null,
+  };
+  const rows = await A.authorStatus(coach, ctx, { all: [coach] });
+  console.log('\nrenumbered coaches - a page with the old code');
+  t('a page still carrying the old code is a note (it works), not "wrong"', rows.find((r) => r.check === 'page uses the old coach code').status, 'WARN');
+  falsy('...and is never reported as "another coach"', rows.some((r) => r.check === 'talks through the Worker' && r.status === 'FAIL'));
+}
+
+/* step Course360 through the Courses API — dashboard plans/03 (2026-10-13) */
+{
+  const C = await import('./lib-course360.mjs');
+  const A = await import('./lib-author.mjs');
+  console.log('\nCourse360 by API - names, the iframe, the shape');
+  const MID = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const FRED = 'aaaaaaaa-0000-4000-8000-000000000002';
+  const COPY = 'aaaaaaaa-0000-4000-8000-000000000003';
+  const OTHER = 'aaaaaaaa-0000-4000-8000-000000000004';
+  const rob = { code: '1005', name: 'Rob Streetman', displayName: 'Rob Streetman', coachLabel: 'Rob Streetman – Hold On', bookTitle: 'Hold On', slug: 'rob-streetman' };
+  const fred = { code: '1002', name: 'Freddy Davis', displayName: 'Freddy Davis', coachLabel: 'Worldview Coach', slug: 'freddy-davis', courseLessonUrl: `https://login.leadershipbookspublishers.com/courses/products/${FRED}` };
+  t('the course title is the live pattern, the label not repeating the name', [C.courseTitle(fred), C.courseTitle(rob)], ['BookCoach AI — Freddy Davis — Worldview Coach', 'BookCoach AI — Rob Streetman – Hold On']);
+  t('a course id from an id, a member link, or nothing', [C.courseIdFrom(FRED.toUpperCase()), C.courseIdFrom(`https://login.x/courses/products/${FRED}?is_preview=true`), C.courseIdFrom('abc')], [FRED, FRED, '']);
+  const html = C.coachLessonHtml('rob-streetman');
+  t('the coach lesson is the live iframe, with a plain &', html, '<p><iframe src="https://www.book-coach.ai/rob-streetman?cid={{contact.id}}&em={{contact.email}}" width="100%" height="800" allow="microphone" style="border:0px"></iframe></p><p></p>');
+  t('&amp; in a stored lesson reads the same', C.iframeIsFor(html.replace('&em', '&amp;em'), 'rob-streetman'), true);
+  t('a copy still opening Freddy is not Rob\'s', [C.iframeIsFor(C.coachLessonHtml('freddy-davis'), 'rob-streetman'), C.iframeSlug(C.coachLessonHtml('freddy-davis'))], [false, 'freddy-davis']);
+  t('no iframe, no slug', [C.iframeSlug('<p></p>'), C.iframeIsFor('', 'x'), C.iframeIsFor(html, '')], ['', false, false]);
+
+  const cats = (id) => [{ id: `${id}-m1`, title: 'Talk to your Book Coach AI below', sequenceNo: 1 }, { id: `${id}-m0`, title: 'Getting to know Book Coach AI', sequenceNo: 0 }];
+  const lessons = (id, slug) => [
+    { id: `${id}-c`, title: 'BookCoach AI', categoryId: `${id}-m1`, sequenceNo: 0, description: C.coachLessonHtml(slug) },
+    ...['1: Welcome', '2: Take Your Coach With You'].map((title, i) => ({ id: `${id}-l${i}`, title, categoryId: `${id}-m0`, sequenceNo: i, description: '<p></p>' })),
+  ];
+  const masterShape = C.courseShape(cats(MID), lessons(MID, 'freddy-davis'));
+  t('modules and lessons in their own order', masterShape.map((m) => [m.title, m.lessons.map((l) => l.title)]), [['Getting to know Book Coach AI', ['1: Welcome', '2: Take Your Coach With You']], ['Talk to your Book Coach AI below', ['BookCoach AI']]]);
+  t('a copy has the same shape', C.shapeDiff(C.courseShape(cats(COPY), lessons(COPY, 'freddy-davis')), masterShape), []);
+  t('an older one-module course does not', C.shapeDiff([{ title: 'Course Contents', lessons: [{ title: 'BookCoach AI' }] }], masterShape).length > 0, true);
+  t('the coach lesson is found by its title', C.coachLesson(masterShape).id, `${MID}-c`);
+
+  console.log('\nCourse360 by API - which course is this author\'s');
+  const course = (id, title) => ({ id, title, description: '' });
+  const courses = [course(MID, 'BookCoach AI — Freddy Davis — Worldview Coach'), course(COPY, 'BookCoach AI — Freddy Davis — Worldview Coach'), course(OTHER, 'The Truth Mirage Online Course')];
+  const shapes = { [MID]: masterShape, [COPY]: C.courseShape(cats(COPY), lessons(COPY, 'freddy-davis')), [OTHER]: [] };
+  const fredRecorded = { ...fred, courseLessonUrl: `https://login.x/courses/products/${MID}` };
+  const find = (coach, extra = {}) => C.findCourse({ coach, coaches: [fredRecorded, rob], courses, offers: [], masterId: MID, masterShape, shapeOf: async (id) => shapes[id], ...extra });
+  let r = await find(rob);
+  t('🔑 the fresh Duplicate of the master is found — though it still carries Freddy\'s name', [r.course && r.course.id, r.how], [COPY, 'a fresh Duplicate of the master']);
+  r = await find(rob, { offers: [{ id: 'o', products: [{ id: COPY }] }] });
+  truthy('...but not one an Offer already gives (it is someone\'s)', r.problem && /no course for this author yet/.test(r.problem));
+  r = await find(rob, { courses: [...courses, course('aaaaaaaa-0000-4000-8000-000000000005', 'Copy of BookCoach AI — Freddy Davis — Worldview Coach')], shapes: undefined, shapeOf: async (id) => shapes[id] || shapes[COPY] });
+  truthy('two unused copies: never guesses, lists both', r.problem && /2 unused copies/.test(r.problem));
+  r = await find(rob, { given: MID });
+  truthy('the master given for another author is refused, naming whose it is', r.problem && /Freddy Davis's course \(1002\)/.test(r.problem));
+  r = await find(fredRecorded);
+  t('the saved lesson link wins', [r.course.id, r.how], [MID, 'the saved lesson link']);
+  r = await find({ ...fred, courseLessonUrl: `https://login.x/courses/products/${'bbbbbbbb-0000-4000-8000-000000000009'}` }, { coaches: [{ ...fred, courseLessonUrl: '' }, rob], courses: [courses[0], courses[2]] });
+  t('Freddy today: the saved course was deleted, the new one is found by its title', [r.course && r.course.id, r.how], [MID, 'its title names this author']);
+  r = await find({ ...rob, courseId: 'bbbbbbbb-0000-4000-8000-000000000009' });
+  truthy('a saved courseId that is gone is said, not replaced by a guess', r.problem && /not in Course360 any more/.test(r.problem));
+  r = await find(rob, { courses: [courses[0], courses[2]] });
+  truthy('no copy yet: says to Duplicate the master, by its title', r.problem && /Duplicate/.test(r.problem) && /Freddy Davis — Worldview Coach/.test(r.problem));
+
+  console.log('\nCourse360 by API - the plan');
+  const robCourse = course(COPY, 'BookCoach AI — Freddy Davis — Worldview Coach');
+  const plan = (extra = {}) => C.planCourse360({ coach: rob, slug: 'rob-streetman', course: robCourse, shape: shapes[COPY], masterShape, offers: [], ...extra });
+  let p = plan();
+  t('a fresh copy: rename + description, the coach link, a new Offer — in that order', p.writes.map((w) => `${w.method} ${w.key}`), ['PUT course', 'PUT lesson', 'POST offer']);
+  t('...the new Offer is Free, Published and gives the course', p.writes[2].body, { title: 'BookCoach AI — Rob Streetman – Hold On', type: 'free', amount: 0, currency: 'USD', visibility: 'published', productIds: [COPY] });
+  t('...the lesson write changes only its text', Object.keys(p.writes[1].body), ['description']);
+  truthy('...and says which coach it opened before', /book-coach\.ai\/freddy-davis → book-coach\.ai\/rob-streetman/.test(p.writes[1].say));
+  t('...and the ids to save, the lesson link included', p.record, { courseId: COPY, courseLessonUrl: `https://login.leadershipbookspublishers.com/courses/products/${COPY}` });
+  t('🔑 the plan never sets a picture — only GHL\'s own course screen can set one that shows', 'posterImage' in plan().writes[0].body, false);
+  t('a picture shows only from GHL\'s course storage (Rick\'s Media Storage link showed broken, 2026-10-13)',
+    ['/memberships/L/product/abc', 'https://storage.googleapis.com/revex-membership-production/memberships/L/courses/x.jpg', 'https://cdn.courses.apisystem.tech/memberships/L/product/y', 'https://assets.cdn.filesafe.space/L/media/z.jpg', ''].map(C.posterShows),
+    [true, true, true, false, false]);
+  const offer = (o) => ({ id: 'off-1', title: 'BookCoach AI — Rob Streetman – Hold On', type: 'free', visibility: 'published', products: [], ...o });
+  p = plan({ offers: [offer({ visibility: 'draft' })] });
+  t('🔑 Freddy\'s case: an Offer with his title but no course is linked (and a draft published), not doubled', [p.writes[2].method, p.writes[2].body], ['PUT', { productIds: [COPY], visibility: 'published' }]);
+  p = plan({ offers: [offer({ products: [{ id: COPY }] })] });
+  t('an Offer already right: nothing to write for it, its id saved', [p.writes.some((w) => w.key === 'offer'), p.record.courseOfferId], [false, 'off-1']);
+  p = plan({ offers: [offer({ products: [{ id: OTHER, title: 'The Truth Mirage Online Course' }] })] });
+  truthy('an Offer that gives another course too is refused — a program never takes a course out', p.problems.some((x) => /also gives "The Truth Mirage Online Course"/.test(x)));
+  p = plan({ offers: [offer({ type: 'onetime' })] });
+  truthy('a paid Offer is refused', p.problems.some((x) => /onetime, not Free/.test(x)));
+  p = plan({ offers: [offer({ id: 'a', products: [{ id: COPY }] }), offer({ id: 'b', title: 'AI Coach Final — Someone', products: [{ id: COPY }] })] });
+  t('two Offers give it: the one titled for this author is used (Stickler has two)', p.record.courseOfferId, 'a');
+  p = plan({ shape: [{ title: 'Course Contents', lessons: [{ id: 'x', title: 'BookCoach AI', description: '' }] }] });
+  truthy('not a copy of the master: refused', p.problems.some((x) => /not a copy of the master/.test(x)));
+  p = C.planCourse360({ coach: { ...rob, courseOfferId: 'off-1' }, slug: 'rob-streetman', course: { ...robCourse, title: C.courseTitle(rob), description: (await import('./lib-onboard.mjs')).courseDescription('Rob Streetman') },
+    shape: C.courseShape(cats(COPY), lessons(COPY, 'rob-streetman')), masterShape, offers: [offer({ products: [{ id: COPY }] })] });
+  t('a second run after it all worked: nothing to write', p.writes, []);
+
+  console.log('\nCourse360 by API - carrying out the writes');
+  const sent = [];
+  let res = await C.runWrites(async (w) => { sent.push(w.key); return w.key === 'offer' ? { id: 'new-offer' } : {}; }, plan().writes);
+  t('in order, and the new Offer\'s id comes back', [sent, res.ok, res.created], [['course', 'lesson', 'offer'], true, { courseOfferId: 'new-offer' }]);
+  sent.length = 0;
+  res = await C.runWrites(async (w) => { sent.push(w.key); if (w.key === 'lesson') throw new Error('GHL 500'); return {}; }, plan().writes);
+  t('🔑 stops at the first failure and says what is left — never half-made silently', [sent, res.ok, res.failed.key, res.left.map((w) => w.key), res.error], [['course', 'lesson'], false, 'lesson', ['lesson', 'offer'], 'GHL 500']);
+  res = await C.runWrites(async () => ({}), plan().writes.slice(2));
+  t('an Offer created without an id is a failure, not a silent success', [res.ok, /without the new Offer/.test(res.error)], [false, true]);
+
+  console.log('\nCourse360 by API - author set');
+  t('courseId takes an id or the link', [A.parseRecordValue('courseId', `https://login.x/courses/products/${FRED}`)[0], A.parseRecordValue('courseId', 'nope')[1] !== null], [FRED, true]);
+  t('courseOfferId takes only an id', [A.parseRecordValue('courseOfferId', FRED)[0], A.parseRecordValue('courseOfferId', 'https://x')[0]], [FRED, null]);
+
+  console.log('\nCourse360 by API - the live checks');
+  const ghlFor = (data) => async (p, opts = {}) => {
+    if (p.startsWith('/courses/')) {
+      if (opts.version !== 'v3') throw new Error('GHL 404 on wrong version');
+      const path = p.split('?')[0];
+      if (!(path in data)) throw new Error(`GHL 404 on ${path}`);
+      if (data[path] === 401) throw new Error(`GHL 401 on ${path}`);
+      return data[path];
+    }
+    return p.startsWith('/workflows/') ? { workflows: [] } : { contacts: [] };
+  };
+  const D = C.DEFAULT_COURSE_MASTER;
+  const live = (id, slug, offers, poster = '/memberships/L/product/pic') => ({
+    [`/courses/products/${id}`]: { id, title: C.courseTitle(rob), posterImage: poster },
+    [`/courses/products/${id}/categories`]: { categories: cats(id) }, [`/courses/products/${id}/lessons`]: { lessons: lessons(id, slug) },
+    [`/courses/products/${D}/categories`]: { categories: cats(D) }, [`/courses/products/${D}/lessons`]: { lessons: lessons(D, 'freddy-davis') },
+    '/courses/offers': { offers },
+  });
+  const statusOf = async (coach, data) => {
+    const ctx = { locationId: 'L', cfg: {}, fetchText: async () => ({ status: 200, text: '' }), catalog: async () => new Map(), ghl: ghlFor(data), health: async () => ({ coaches: [] }), kvGet: async () => null, lastVerify: () => null };
+    return (await A.authorStatus(coach, ctx, { all: [coach] })).filter((x) => x.step === STEP.course360);
+  };
+  const robLive = { ...rob, courseId: COPY };
+  let rows = await statusOf(robLive, live(COPY, 'rob-streetman', [offer({ products: [{ id: COPY }] })]));
+  t('all right: course, coach link, like the master, the Offer — all done', rows.map((x) => `${x.check}: ${x.status}`), ['course exists: DONE', 'course picture shows in GHL: DONE', 'coach lesson opens this author\'s coach: DONE', 'course matches the master: DONE', 'Offer is Free, Published and gives this course: DONE']);
+  falsy('...and the old MANUAL "Free and unlisted" sign-off row is gone', rows.some((x) => x.status === 'MANUAL'));
+  rows = await statusOf(robLive, live(COPY, 'freddy-davis', [offer({ products: [{ id: COPY }], visibility: 'draft' })]));
+  t('🔑 a copy still opening Freddy, and a draft Offer: both FAIL, saying so', rows.filter((x) => x.status === 'FAIL').map((x) => x.detail), ['it opens book-coach.ai/freddy-davis — another coach', `"${offer().title}" is draft — the grant workflow cannot pick it`]);
+  rows = await statusOf(robLive, live(COPY, 'rob-streetman', [offer({ products: [{ id: COPY }] })], 'https://assets.cdn.filesafe.space/L/media/z.jpg'));
+  t('🔑 a picture GHL cannot show (a Media Storage link): FAIL, saying where to upload it', [rows[1].check, rows[1].status, /Edit → upload its image/.test(rows[1].fix)], ['course picture shows in GHL', 'FAIL', true]);
+  rows = await statusOf(robLive, live(COPY, 'rob-streetman', [offer({ products: [{ id: COPY }] })], ''));
+  t('no picture yet: a note, not wrong', rows[1].status, 'WARN');
+  rows = await statusOf(robLive, live(COPY, 'rob-streetman', [offer()]));
+  t('🔑 an Offer that gives no course (Freddy, 2026-10-13): FAIL', rows.at(-1).status, 'FAIL');
+  rows = await statusOf({ ...rob, courseLessonUrl: `https://login.x/courses/products/${OTHER}` }, live(COPY, 'rob-streetman', []));
+  t('🔑 a saved course that was deleted: FAIL (the lesson link alone still answers 200)', [rows[0].check, rows[0].status], ['course exists', 'FAIL']);
+  rows = await statusOf(rob, {});
+  t('no course yet: TODO, saying to Duplicate', [rows[0].status, /Duplicate/.test(rows[0].fix)], ['TODO', true]);
+  rows = await statusOf(robLive, { [`/courses/products/${COPY}`]: 401 });
+  t('without courses.readonly: one MANUAL row naming the permission', [rows.length, rows[0].status, /courses\.readonly/.test(rows[0].fix)], [1, 'MANUAL', true]);
+  t('🔑 Course360 has no sign-off any more', (await import('./steps.mjs')).stepById(STEP.course360).signoff, undefined);
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

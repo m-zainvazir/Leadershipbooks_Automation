@@ -2,13 +2,27 @@
 /**
  * author.mjs — the author record. One command for everything after onboard.
  *
- *   npm run author                                   every author x every runbook step
+ *   npm run author                                   every author x every checklist step (0-16)
  *   npm run author -- status --code 1044 [--deep]    one author, row by row, with the fix
  *   npm run author -- set --code 1044 --shopifyProductId 123 --courseLessonUrl https://...
  *   npm run author -- page --code 1044               the coach page CONFIG block to paste
  *   npm run author -- zipify --code 1044 --from 1043 the Zipify find-and-replace list
  *   npm run author -- shopify --code 1044 --sku BC978... --grams 450 [--price 29.95] [--write]
- *                                                    create the bundle (needs the Admin token)
+ *                    [--image-file "C:\…\cover.jpg" | --image-url https://…]
+ *                                                    create the bundle (needs the Admin token),
+ *                                                    with its product image uploaded full size
+ *   npm run author -- shopify-image --code 1044 (--image-file … | --image-url …) [--product collection] [--write]
+ *                                                    add the image to a product that already exists
+ *   npm run author -- shopify-collection --code 1044 [--price 97.00] [--image-file … | --image-url …] [--write]
+ *   npm run author -- course360 --code 1044 [--course <id or link>] [--write]
+ *                                                    step Course360 after you Duplicate the master course in GHL:
+ *                                                    title, description, coach link, the Free Published Offer (the picture: by hand in GHL)
+ *   npm run author -- shopify-listings [--write]       give every bundle and collection product what selling
+ *                                                    abroad needs (category, description, weight, origin) — mostly only what is missing
+ *                                                    the optional Course Collection product (no coach access)
+ *
+ * --code takes the code, the slug, the name or a unique part of it (lib-find.mjs);
+ * --author is the same. `--from` (zipify) takes the same.
  *
  * `status` and the table READ every system and write nothing. `--deep` also
  * compares KV field by field against coaches.json (slower: one wrangler call).
@@ -18,14 +32,18 @@
  * Plan: ../ghl-shopify subscription/plans/21-onboarding-automation.md §E
  */
 
-import { execFileSync } from 'node:child_process';
-import { loadConfig, HERE, bearer, runtimeConfig } from './lib-config.mjs';
+import { loadConfig, bearer, runtimeConfig } from './lib-config.mjs';
 import { saveRegistry, readState } from './lib-registry.mjs';
 import {
   STEPS, RECORD_FIELDS, parseRecordValue, authorStatus, stepSummary, coachPageConfig, coachPageGaps, zipifyReplacements, slugOf,
 } from './lib-author.mjs';
-import { connectShopify, shopifyConfig, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION } from './lib-shopify.mjs';
+import { connectShopify, shopifyConfig, createBundle, bundleProblems, bundleTitle, BUNDLE_COLLECTION, loadProductImage, describeImage, productMedia, addProductImage, directImageUrl,
+  createCollectionProduct, collectionProblems, collectionTitle, COLLECTION_PRICE,
+  bundleDescription, collectionDescription, listingFixes, fixListing } from './lib-shopify.mjs';
 import { emailProblems } from './lib-verify-author.mjs';
+import { makeReaders } from './lib-readers.mjs';
+import { findCoach, coachFromArgs } from './lib-find.mjs';
+import { COURSES_VERSION, DEFAULT_COURSE_MASTER, courseIdFrom, listAll, readShape, findCourse, planCourse360, runWrites } from './lib-course360.mjs';
 
 const argv = process.argv.slice(2);
 const cmd = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'all';
@@ -39,6 +57,13 @@ const die = (msg) => {
   console.error(`\n${msg}\n`);
   process.exit(1);
 };
+// Node on Windows can abort with "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)"
+// (exit 127) when process.exit runs while a just-used fetch connection is still closing —
+// a successful dry run would then read as failed. The Shopify commands exit through these,
+// which give the connections a moment to close first.
+const settle = () => new Promise((r) => setTimeout(r, 300));
+const finish = async (code) => { await settle(); process.exit(code); };
+const dieSoon = async (msg) => { console.error(`\n${msg}\n`); await settle(); process.exit(1); };
 
 let config;
 try {
@@ -48,71 +73,19 @@ try {
 }
 const { shared, coaches } = config;
 const workerUrl = String(shared.workerUrl || '').replace(/\/+$/, '');
+// --code 1043, --code freddy-davis, --code freddy, --author freddy: all the same author.
 const pick = () => {
-  const code = valOf('--code');
-  if (!code) die(`${cmd} needs --code <code>. Coaches: ${coaches.map((c) => `${c.code} ${c.displayName || c.name}`).join(', ')}`);
-  const c = coaches.find((x) => x.code === String(code));
-  if (!c) die(`no coach ${code} in coaches.json`);
-  return c;
+  const { coach, problem } = coachFromArgs(coaches, valOf);
+  if (problem) die(`${cmd}: ${problem}`);
+  return coach;
 };
 
 /* ---------------------------------------------------------------- readers --- */
 
-async function fetchText(url) {
-  const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(20000) });
-  return { status: res.status, text: res.ok ? await res.text() : '' };
-}
-
-let catalogCache = null;
-/** Every product in Shopify's public catalogue. No token needed. */
-async function catalog() {
-  if (catalogCache) return catalogCache;
-  const map = new Map();
-  for (let page = 1; page <= 40; page++) {
-    const r = await fetch(`https://leadershipbooks.com/products.json?limit=250&page=${page}`, { signal: AbortSignal.timeout(20000) });
-    if (!r.ok) throw new Error(`Shopify products.json ${r.status}`);
-    const { products = [] } = await r.json();
-    for (const p of products) map.set(String(p.id), p);
-    if (products.length < 250) break;
-  }
-  return (catalogCache = map);
-}
-
-async function ghl(path, { method = 'GET', body = null } = {}) {
-  // Read-only by construction: the only POST is contacts/search.
-  if (method !== 'GET' && path !== '/contacts/search') throw new Error(`author refuses to ${method} ${path}`);
-  const res = await fetch(`https://services.leadconnectorhq.com${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${shared.ghlApiToken}`,
-      Version: '2021-07-28',
-      accept: 'application/json',
-      ...(body ? { 'content-type': 'application/json' } : {}),
-    },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
-  if (!res.ok) throw new Error(`GHL ${res.status} on ${path.split('?')[0]}`);
-  return res.json();
-}
-
-let healthCache = null;
-async function health() {
-  if (healthCache) return healthCache;
-  const r = await fetch(`${workerUrl}/health`, { headers: { 'x-health-token': shared.healthToken || '' } });
-  if (!r.ok) throw new Error(`/health ${r.status}`);
-  return (healthCache = await r.json());
-}
-
-function kvGet(key) {
-  const IS_WIN = process.platform === 'win32';
-  try {
-    return JSON.parse(execFileSync(IS_WIN ? 'npx.cmd' : 'npx', ['wrangler', 'kv', 'key', 'get', key, '--binding=COACH_KV', '--remote', '--preview=false'], {
-      cwd: HERE, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: IS_WIN,
-    }));
-  } catch {
-    return null;
-  }
-}
+// Every live read lives in lib-readers.mjs, shared with npm run pipeline and the
+// dashboard so every view of an author agrees. Read-only by construction.
+const readers = makeReaders(shared);
+const { health } = readers;
 
 /**
  * One harmless Voiceflow read per coach — the state of a made-up user, over the
@@ -139,7 +112,7 @@ async function probeVoiceflow(list) {
 const state = readState();
 const ctx = () => ({
   cfg: runtimeConfig(shared),
-  fetchText, catalog, ghl, health, kvGet, locationId: shared.ghlLocationId,
+  ...readers,
   lastVerify: (code) => state[code] && state[code].lastVerify,
 });
 
@@ -148,7 +121,7 @@ const ICON = { DONE: '✓', TODO: '·', FAIL: '✗', WARN: '!', MANUAL: '?' };
 /* --------------------------------------------------------------- commands --- */
 
 if (cmd === 'all') {
-  console.log(`\nAuthors — every runbook step, read live    ✓ done  ✗ wrong  ! cosmetic  · to do  ? can't be read\n`);
+  console.log(`\nAuthors — every checklist step (further-automation-v1.md), read live    ✓ done  ✗ wrong  ! cosmetic  · to do  ? can't be read\n`);
   const head = STEPS.map(([n]) => String(n).padStart(2)).join(' ');
   console.log(`  ${'code'.padEnd(6)}${'author'.padEnd(20)}${head}   next`);
   for (const coach of coaches) {
@@ -167,7 +140,7 @@ if (cmd === 'status') {
   const coach = pick();
   const rows = await authorStatus(coach, ctx(), { all: coaches, deep: has('--deep') });
   console.log(`\n${coach.code} ${coach.displayName || coach.name} — ${coach.bookTitle || ''}\n`);
-  let last = 0;
+  let last = -1;
   for (const r of rows) {
     const step = r.step !== last ? `${String(r.step).padStart(2)} ${(STEPS.find(([n]) => n === r.step) || [])[1]}` : '';
     last = r.step;
@@ -190,7 +163,7 @@ if (cmd === 'set') {
     if (problem) problems.push(problem);
     else changes[field] = value;
   }
-  const unknown = argv.filter((a, i) => a.startsWith('--') && a !== '--code' && !(`${a.slice(2)}` in RECORD_FIELDS) && argv[i - 1] !== '--code');
+  const unknown = argv.filter((a, i) => a.startsWith('--') && a !== '--code' && a !== '--author' && !(`${a.slice(2)}` in RECORD_FIELDS) && argv[i - 1] !== '--code' && argv[i - 1] !== '--author');
   for (const u of unknown) problems.push(`unknown field ${u}. Settable:\n    ${Object.entries(RECORD_FIELDS).map(([k, v]) => `--${k.padEnd(18)} ${v}`).join('\n    ')}`);
   if (problems.length) die(`Nothing written:\n  x ${problems.join('\n  x ')}`);
   if (!Object.keys(changes).length) die(`Nothing to set. Settable:\n    ${Object.entries(RECORD_FIELDS).map(([k, v]) => `--${k.padEnd(18)} ${v}`).join('\n    ')}`);
@@ -230,9 +203,10 @@ if (cmd === 'page') {
 if (cmd === 'zipify') {
   const coach = pick();
   const fromCode = valOf('--from');
-  if (!fromCode) die('zipify needs --from <code>: the author whose page you are cloning');
-  const from = coaches.find((c) => c.code === String(fromCode));
-  if (!from) die(`no coach ${fromCode}`);
+  if (!fromCode) die('zipify needs --from <author>: the author whose page you are cloning (code, slug or name)');
+  const found = findCoach(coaches, fromCode);
+  if (found.problem) die(`zipify --from: ${found.problem}`);
+  const from = found.coach;
   const pairs = zipifyReplacements(from, coach);
   console.log(`\nZipify clone: ${from.displayName || from.name} -> ${coach.displayName || coach.name}`);
   console.log(`Source page: ${from.bookLandingUrl || '(not recorded — set --bookLandingUrl on the source author)'}\n`);
@@ -240,9 +214,10 @@ if (cmd === 'zipify') {
   pairs.forEach((p, i) => console.log(`  ${String(i + 1).padStart(2)}. ${JSON.stringify(p.find)}\n      -> ${JSON.stringify(p.replace)}${p.why ? `    (${p.why})` : ''}`));
   const missing = ['bookTitle', 'shopifyProductId', 'shopifyVariantId'].filter((k) => !coach[k]);
   if (missing.length) console.log(`\n  ⚠ ${coach.code} has no ${missing.join(', ')} yet — those replacements are missing.`);
-  console.log(`\nAdd to Cart: a plain Button element, NOT Zipify's Product Button (runbook §9c):`);
-  console.log(`  Label: ADD TO CART`);
-  console.log(`  Link : https://leadershipbooks.com/cart/${coach.shopifyVariantId || '<VARIANT_ID>'}:1`);
+  // Since 2026-10-12: Zipify's own Product block (it replaced the plain button to the cart link).
+  console.log(`\nAdd to Cart: Zipify's Product block, set to this author's bundle:`);
+  console.log(`  Product: ${coach.bookTitle ? bundleTitle(coach) : '(no bookTitle yet)'}`);
+  console.log(`  (its plain cart link, if ever needed: https://leadershipbooks.com/cart/${coach.shopifyVariantId || '<VARIANT_ID>'}:1)`);
   console.log(`\nThen rewrite the pitch (runbook §9b — ~70% of the page is about the book).`);
   console.log(`Then: npm run author -- set --code ${coach.code} --bookLandingUrl <url>   and   npm run author -- status --code ${coach.code}\n`);
   process.exit(0);
@@ -261,14 +236,15 @@ if (cmd === 'check') {
     ['workflows.readonly', 'GET', `/workflows/?locationId=${L}`, null, 'grant-workflow check'],
     ['locations/tags.readonly', 'GET', `/locations/${L}/tags`, null, 'tag checks'],
     ['locations/customFields.readonly', 'GET', `/locations/${L}/customFields`, null, 'field names'],
+    ['courses.readonly', 'GET', `/courses/products?locationId=${L}&limit=1`, null, 'step Course360', COURSES_VERSION],
   ];
   const probeToken = async (token) => {
     const out = [];
-    for (const [scope, method, path, body, why] of probes) {
+    for (const [scope, method, path, body, why, version] of probes) {
       if (!path) { out.push([scope, 'skip', 'no product recorded to read']); continue; }
       const res = await fetch(`https://services.leadconnectorhq.com${path}`, {
         method,
-        headers: { Authorization: `Bearer ${token}`, Version: '2021-07-28', accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+        headers: { Authorization: `Bearer ${token}`, Version: version || '2021-07-28', accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
       out.push([scope, res.ok ? 'ok' : String(res.status), why || '']);
@@ -282,7 +258,7 @@ if (cmd === 'check') {
     console.log(`\n  GHL ${key}${key === 'ghlApiToken' ? '  (live — the Worker uses this)' : '  (candidate)'}`);
     for (const [scope, st, why] of report[key]) console.log(`    ${st === 'ok' ? '✓' : st === 'skip' ? '·' : '✗'} ${scope.padEnd(34)} ${st === 'ok' ? '' : st}${why ? `   ${why}` : ''}`);
   }
-  console.log('    (write scopes — contacts, products, prices, tags — are not probed: that would mean writing)');
+  console.log('    (write scopes — contacts, products, prices, tags, courses — are not probed: that would mean writing)');
 
   // Voiceflow: which key each coach resolves to, and whether it answers.
   const vf = await probeVoiceflow(coaches);
@@ -381,10 +357,14 @@ if (cmd === 'config') {
 }
 
 if (cmd === 'shopify') {
-  // Runbook step 3. Dry by default; --write creates the product.
+  // Checklist step Shopify bundle. Dry by default; --write creates the product.
   const coach = pick();
   const opts = { coach, price: valOf('--price') || '29.95', sku: valOf('--sku'), grams: valOf('--grams') };
   const problems = bundleProblems(opts);
+  // The product image — a file on this computer or a link; read and checked in the dry run too.
+  const img = await loadProductImage({ file: valOf('--image-file'), url: valOf('--image-url') });
+  problems.push(...img.problems);
+  opts.image = img.image;
   const sc = shopifyConfig(shared);
   if (sc.missing.length) {
     problems.push(`Shopify not configured — missing ${sc.missing.join(', ')}. See plans/21 §D: a Dev Dashboard app ` +
@@ -393,11 +373,14 @@ if (cmd === 'shopify') {
   console.log(`\nShopify bundle for ${coach.code} ${coach.displayName || coach.name}${has('--write') ? '' : '   (DRY RUN)'}\n`);
   console.log(`  title    ${bundleTitle(coach)}`);
   console.log(`  price    $${opts.price}   sku ${opts.sku || '(missing)'}   weight ${opts.grams || '(missing)'} g   ships: yes`);
+  console.log(`  image    ${opts.image ? describeImage(opts.image) : img.problems.length ? '(refused — see below)' : '(none — add one in Shopify later)'}`);
+  if (opts.image) console.log(`           from ${opts.image.source}`);
+  for (const n of img.notes) console.log(`           note: ${n}`);
   console.log(`  then     publish to Online Store, add to the ${BUNDLE_COLLECTION} collection, record the ids`);
-  if (problems.length) die(`REFUSING — nothing created:\n  x ${problems.join('\n  x ')}`);
+  if (problems.length) await dieSoon(`REFUSING — nothing created:\n  x ${problems.join('\n  x ')}`);
   if (!has('--write')) {
     console.log('\nDry run only. Re-run with --write.\n');
-    process.exit(0);
+    await finish(0);
   }
   let made;
   try {
@@ -405,16 +388,262 @@ if (cmd === 'shopify') {
     if (lacking.length) throw new Error(`the Shopify app is missing scopes: ${lacking.join(', ')} — add them in the Dev Dashboard, release a new version, reinstall`);
     made = await createBundle(gql, opts);
   } catch (err) {
-    die(`STOPPED: ${err.message}\n  Already in Shopify: ${JSON.stringify(err.created || {})}\n  coaches.json was NOT changed.`);
+    await dieSoon(`STOPPED: ${err.message}\n  Already in Shopify: ${JSON.stringify(err.created || {})}\n  coaches.json was NOT changed.`);
   }
   console.log(`\n  created  product ${made.productId}  variant ${made.variantId}  /products/${made.handle}`);
+  if (made.image) {
+    const im = made.image;
+    console.log(im.status === 'READY'
+      ? `  image    ✓ on the product, ${im.width} × ${im.height}`
+      : `  image    ⚠ ${im.status}${im.errors && im.errors.length ? `: ${im.errors.join('; ')}` : ''} — the product is fine; check its picture in Shopify → Products, and add it there by hand if it is missing`);
+  }
   const { backup, warnings } = saveRegistry((doc) => {
     Object.assign(doc.coaches.find((c) => String(c.code) === coach.code), { shopifyProductId: made.productId, shopifyVariantId: made.variantId });
   }, { label: `shopify-${coach.code}`, code: coach.code });
   console.log(`  recorded shopifyProductId + shopifyVariantId   (backup: ${backup})`);
   for (const w of warnings) console.log(`    ${w}`);
   console.log(`\n  Zipify cart link: https://leadershipbooks.com/cart/${made.variantId}:1\n  Not pushed. npm run push when ready.\n`);
-  process.exit(0);
+  await finish(0);
 }
 
-die(`unknown command "${cmd}". Use: (none) | status | set | config | check | promote-ghl-token | drop-project-keys | page | zipify | shopify`);
+if (cmd === 'shopify-image') {
+  // A product that already exists: add its image, nothing else. Dry by default.
+  // --product collection: the Course Collection product instead of the bundle.
+  const coach = pick();
+  const which = valOf('--product') || 'bundle';
+  if (!['bundle', 'collection'].includes(which)) await dieSoon(`--product is bundle or collection, not "${which}"`);
+  const field = which === 'collection' ? 'collectionProductId' : 'shopifyProductId';
+  const productId = coach[field];
+  const img = await loadProductImage({ file: valOf('--image-file'), url: valOf('--image-url') });
+  const problems = [...img.problems];
+  if (!productId) problems.push(`${coach.code} has no ${field} yet — create the ${which === 'collection' ? 'collection product (author shopify-collection)' : 'bundle (author shopify)'} with the image instead`);
+  if (!img.image && !img.problems.length) problems.push('give the image: --image-file "C:\\…\\cover.jpg" or --image-url https://…');
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) problems.push(`Shopify not configured — missing ${sc.missing.join(', ')}`);
+  console.log(`\nProduct image for ${coach.code} ${coach.displayName || coach.name}${has('--write') ? '' : '   (DRY RUN)'}\n`);
+  console.log(`  image    ${img.image ? describeImage(img.image) : '(refused — see below)'}`);
+  if (img.image) console.log(`           from ${img.image.source}`);
+  for (const n of img.notes) console.log(`           note: ${n}`);
+  if (problems.length) await dieSoon(`REFUSING — nothing uploaded:\n  x ${problems.join('\n  x ')}`);
+  let gql;
+  try {
+    const conn = await connectShopify(shared);
+    if (conn.lacking.length) throw new Error(`the Shopify app is missing scopes: ${conn.lacking.join(', ')}`);
+    gql = conn.gql;
+    const now = await productMedia(gql, productId);
+    if (!now) throw new Error(`product ${productId} is not in Shopify — check the product id saved for this author`);
+    console.log(`  product  ${productId}  "${now.title}"  — has ${now.mediaIds.length} image(s) now`);
+    console.log(now.mediaIds.length
+      ? '  then     this one is ADDED after them (nothing is removed). To make it the main picture, drag it first in Shopify → Products'
+      : '  then     it becomes the product\'s main picture');
+  } catch (err) {
+    await dieSoon(`STOPPED: ${err.message}\n  Nothing was uploaded.`);
+  }
+  if (!has('--write')) {
+    console.log('\nDry run only. Re-run with --write.\n');
+    await finish(0);
+  }
+  let im;
+  try {
+    im = await addProductImage(gql, { productId, image: img.image });
+  } catch (err) {
+    await dieSoon(`STOPPED: ${err.message}`);
+  }
+  console.log(im.status === 'READY'
+    ? `\n  image    ✓ on the product, ${im.width} × ${im.height}\n`
+    : `\n  image    ⚠ ${im.status}${im.errors && im.errors.length ? `: ${im.errors.join('; ')}` : ''} — check the product's pictures in Shopify → Products\n`);
+  await finish(im.status === 'FAILED' ? 1 : 0);
+}
+
+if (cmd === 'shopify-collection') {
+  // Checklist step "Course Collection + Bundle Image" (optional). Dry by default; --write creates it.
+  // 🚨 Recorded as collectionProductId, NEVER shopifyProductId: an order for it starts no trial.
+  const coach = pick();
+  const opts = { coach, price: valOf('--price') || COLLECTION_PRICE };
+  const problems = collectionProblems(opts);
+  const img = await loadProductImage({ file: valOf('--image-file'), url: valOf('--image-url') });
+  problems.push(...img.problems);
+  opts.image = img.image;
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) problems.push(`Shopify not configured — missing ${sc.missing.join(', ')}`);
+  console.log(`\nCourse Collection product for ${coach.code} ${coach.displayName || coach.name}${has('--write') ? '' : '   (DRY RUN)'}\n`);
+  console.log(`  title    ${coach.bookTitle ? collectionTitle(coach) : '(no bookTitle)'}`);
+  console.log(`  price    $${opts.price}   inventory: not tracked   shipping address: not asked   description: none`);
+  console.log(`  image    ${opts.image ? describeImage(opts.image) : img.problems.length ? '(refused — see below)' : '(none — add one later with shopify-image --product collection)'}`);
+  if (opts.image) console.log(`           from ${opts.image.source}`);
+  for (const n of img.notes) console.log(`           note: ${n}`);
+  console.log('  then     publish to Online Store, record the ids — NOT in coach-bundles: buying it gives no coach access');
+  if (problems.length) await dieSoon(`REFUSING — nothing created:\n  x ${problems.join('\n  x ')}`);
+  if (!has('--write')) {
+    console.log('\nDry run only. Re-run with --write.\n');
+    await finish(0);
+  }
+  let made;
+  try {
+    const { gql, lacking } = await connectShopify(shared);
+    if (lacking.length) throw new Error(`the Shopify app is missing scopes: ${lacking.join(', ')}`);
+    made = await createCollectionProduct(gql, opts);
+  } catch (err) {
+    await dieSoon(`STOPPED: ${err.message}\n  Already in Shopify: ${JSON.stringify(err.created || {})}\n  coaches.json was NOT changed.`);
+  }
+  console.log(`\n  created  product ${made.productId}  variant ${made.variantId}  /products/${made.handle}`);
+  if (made.image) {
+    const im = made.image;
+    console.log(im.status === 'READY'
+      ? `  image    ✓ on the product, ${im.width} × ${im.height}`
+      : `  image    ⚠ ${im.status}${im.errors && im.errors.length ? `: ${im.errors.join('; ')}` : ''} — the product is fine; check its picture in Shopify → Products`);
+  }
+  const { backup, warnings } = saveRegistry((doc) => {
+    Object.assign(doc.coaches.find((c) => String(c.code) === coach.code), { collectionProductId: made.productId, collectionVariantId: made.variantId });
+  }, { label: `collection-${coach.code}`, code: coach.code });
+  console.log(`  recorded collectionProductId + collectionVariantId   (backup: ${backup})`);
+  for (const w of warnings) console.log(`    ${w}`);
+  console.log(`\n  Collection cart link: https://leadershipbooks.com/cart/${made.variantId}:1\n`);
+  await finish(0);
+}
+
+if (cmd === 'shopify-listings') {
+  // Shopify blocks a product in every other country ("188 restrictions") until it has a
+  // category, a description, and — if it ships — a weight and an origin (proven on Reinhard's bundle 2026-10-12).
+  // Every author's bundle and every course collection product; mostly only what is missing. Dry by default.
+  const sc = shopifyConfig(shared);
+  if (sc.missing.length) await dieSoon(`Shopify not configured — missing ${sc.missing.join(', ')}`);
+  const FIELDS = 'id title category { id } descriptionHtml variants(first: 5) { nodes { id price inventoryItem { requiresShipping countryCodeOfOrigin measurement { weight { value } } } } }';
+  let gql;
+  try {
+    const conn = await connectShopify(shared);
+    if (conn.lacking.length) throw new Error(`the Shopify app is missing scopes: ${conn.lacking.join(', ')}`);
+    gql = conn.gql;
+  } catch (err) {
+    await dieSoon(`STOPPED: ${err.message}`);
+  }
+  const targets = new Map(); // product gid -> { product, description, why }
+  for (const c of coaches) {
+    for (const [field, kind] of [['shopifyProductId', 'bundle'], ['collectionProductId', 'collection']]) {
+      if (!c[field]) continue;
+      const gid = `gid://shopify/Product/${c[field]}`;
+      const p = (await gql(`query($id: ID!) { product(id: $id) { ${FIELDS} } }`, { id: gid })).product;
+      if (p) targets.set(gid, { product: p, description: kind === 'bundle' ? bundleDescription(c) : collectionDescription(c), why: `${c.code} ${kind}` });
+    }
+  }
+  // Course collections made by hand are not in coaches.json: found by their title.
+  const norm = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const found = (await gql(`{ products(first: 50, query: "title:*Collection*") { nodes { ${FIELDS} } } }`)).products.nodes;
+  for (const p of found) {
+    // Only titles that END in Collection — not books like 'A Collection of Essays'.
+    if (targets.has(p.id) || !/collection( bundle)?\s*$/i.test(p.title)) continue;
+    const book = p.title.replace(/\s*-?\s*Collection( Bundle)?\s*$/i, '').trim();
+    const owner = coaches.find((c) => c.bookTitle && norm(book) === norm(c.bookTitle));
+    targets.set(p.id, { product: p, description: collectionDescription({ bookTitle: book, displayName: owner ? owner.displayName || owner.name : '' }), why: owner ? `${owner.code} collection (by title)` : 'collection (by title)' });
+  }
+  console.log(`\nWhat selling abroad needs — category, description, weight, origin${has('--write') ? '' : '   (DRY RUN)'}\n`);
+  let todo = 0;
+  for (const [gid, t] of targets) {
+    const { change, missing, notes } = listingFixes(t.product, t.description);
+    if (missing.length) todo++;
+    console.log(`  ${missing.length ? '→' : '✓'} ${t.product.title}   [${t.why}]`);
+    if (missing.length) console.log(`      adds: ${missing.join(' + ')}`);
+    if (change.product.descriptionHtml) console.log(`      description: ${change.product.descriptionHtml.replace(/<[^>]+>/g, '').slice(0, 150)}`);
+    for (const n of notes) console.log(`      ⚠ ${n}`);
+    if (has('--write') && missing.length) {
+      try {
+        await fixListing(gql, gid, change);
+        console.log('      ✓ done');
+      } catch (err) {
+        console.log(`      ✗ ${err.message}`);
+      }
+    }
+  }
+  console.log(todo
+    ? (has('--write') ? `\n  ${todo} product(s) updated. Shopify reviews them again — seconds, at most ~24 h — then Restrictions should read 0.\n` : `\n  ${todo} product(s) would change. Re-run with --write.\n`)
+    : '\n  Nothing missing.\n');
+  await finish(0);
+}
+
+if (cmd === 'course360') {
+  // Step Course360 through HighLevel's Courses API — dashboard plans/03. Dry by default.
+  // A person Duplicates the master course in GHL (videos can be copied nowhere else);
+  // this finds the copy and does the rest. Reads everything first; writes only with --write.
+  const coach = pick();
+  const write = has('--write');
+  const slug = slugOf(coach);
+  const masterId = courseIdFrom(valOf('--master') || '') || DEFAULT_COURSE_MASTER;
+  const api = async (method, path, body) => {
+    const url = `https://services.leadconnectorhq.com${path}${path.includes('?') ? '&' : '?'}locationId=${encodeURIComponent(shared.ghlLocationId || '')}`;
+    const res = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${shared.ghlApiToken}`, Version: COURSES_VERSION, accept: 'application/json', ...(body ? { 'content-type': 'application/json' } : {}) },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(30000),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      let msg = '';
+      try { const j = JSON.parse(text); msg = (j.error && j.error.message) || j.message || ''; } catch { /* not JSON */ }
+      throw new Error(`GHL ${res.status} on ${method} ${path.split('?')[0]}${msg ? ` — ${msg}` : ''}${res.status === 401 ? ' (the token needs the courses.readonly and courses.write permissions)' : ''}`);
+    }
+    return text ? JSON.parse(text) : {};
+  };
+  const get = (p) => api('GET', p);
+  const shapes = new Map();
+  const shapeOf = (id) => { if (!shapes.has(id)) shapes.set(id, readShape(get, id)); return shapes.get(id); };
+
+  // No picture: GHL shows a course picture only from its own course storage, which only its
+  // course screen uploads to — a Media Storage address shows broken (Rick's course, 2026-10-13).
+  if (valOf('--image-file') || valOf('--image-url')) {
+    await dieSoon('REFUSING — nothing written:\n  x a course picture cannot be set by a program: GHL shows it only when it is uploaded on the course\'s own screen\n    (GHL → Memberships → Courses → the course → ⋮ → Edit → its image). Run this without the picture, then add it there.');
+  }
+
+  console.log(`\nCourse360 for ${coach.code} ${coach.displayName || coach.name}${write ? '' : '   (DRY RUN)'}\n`);
+  let plan;
+  try {
+    const [courses, offers] = await Promise.all([listAll(get, 'products'), listAll(get, 'offers')]);
+    const master = courses.find((c) => c.id === masterId);
+    if (!master) throw new Error(`the master course ${masterId} is not in Course360 — give another with --master`);
+    const masterShape = await shapeOf(masterId);
+    const found = await findCourse({ coach, coaches, courses, offers, given: valOf('--course'), masterId, masterShape, shapeOf });
+    if (found.problem) throw new Error(found.problem);
+    plan = planCourse360({ coach, slug, course: found.course, shape: await shapeOf(found.course.id), masterShape, offers });
+    console.log(`  master   "${master.title}"`);
+    console.log(`  course   "${found.course.title}"  (${found.course.id}) — found by ${found.how}`);
+  } catch (err) {
+    await dieSoon(`STOPPED: ${err.message}\n  Nothing was written.`);
+  }
+  for (const d of plan.done) console.log(`  ok       ${d}`);
+  for (const w of plan.writes) console.log(`  ${write ? 'doing' : 'will'}     ${w.say}`);
+  const rec = Object.entries(plan.record).filter(([k, v]) => coach[k] !== v);
+  const recLine = (list) => list.map(([k, v]) => `${k} = ${v}`).join(', ');
+  const newOffer = !plan.offerId && plan.writes.some((w) => w.key === 'offer');
+  if (rec.length || newOffer) console.log(`  save     coaches.json: ${[recLine(rec), newOffer && 'courseOfferId = (the new Offer\'s id)'].filter(Boolean).join(', ')}`);
+  if (plan.problems.length) await dieSoon(`REFUSING — nothing written:\n  x ${plan.problems.join('\n  x ')}`);
+  if (!plan.writes.length && !rec.length) {
+    console.log('\n  Nothing to do — the course, its coach lesson and its Offer are already right.\n');
+    await finish(0);
+  }
+  console.log('\n  Then check by hand: the intro lessons\' videos play (no program can see them).');
+  if (!write) {
+    console.log('\nDry run only. Re-run with --write.\n');
+    await finish(0);
+  }
+
+  console.log('');
+  const result = await runWrites((w) => api(w.method, w.path, w.body), plan.writes, { log: (l) => console.log(l) });
+  // Save what is known even after a failure — the ids make the next run finish the job.
+  const changes = Object.fromEntries([...rec, ...Object.entries(result.created)].filter(([k, v]) => v && coach[k] !== v));
+  if (Object.keys(changes).length) {
+    try {
+      const { backup } = saveRegistry((doc) => Object.assign(doc.coaches.find((c) => String(c.code) === coach.code), changes), { label: `course360-${coach.code}`, code: coach.code });
+      console.log(`  ✓ saved to coaches.json: ${recLine(Object.entries(changes))}   (backup: ${backup})`);
+    } catch (err) {
+      console.error(`  ✗ coaches.json NOT saved: ${err.message}\n    Save by hand: npm run author -- set --code ${coach.code} ${Object.entries(changes).map(([k, v]) => `--${k} ${v}`).join(' ')}`);
+      await finish(1);
+    }
+  }
+  if (!result.ok) {
+    await dieSoon(`STOPPED at: ${result.failed.say}\n  ${result.error}\n  Not done yet:\n    - ${result.left.map((w) => w.say).join('\n    - ')}\n  Run the same command again to finish — it only does what is still missing.`);
+  }
+  console.log('\n  Done. Now open the course in GHL and check the intro videos play.\n');
+  await finish(0);
+}
+
+die(`unknown command "${cmd}". Use: (none) | status | set | config | check | promote-ghl-token | drop-project-keys | page | zipify | shopify | shopify-image | shopify-collection | shopify-listings | course360`);

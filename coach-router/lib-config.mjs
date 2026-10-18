@@ -70,6 +70,10 @@ const KV_FIELDS = [
   'authorPhotoURL',
   'authorURL',
   'books',
+  // The coach's OLD codes after a renumber (2026-10-02: 1042 -> 1001 ...). The
+  // Worker still finds the coach by them — they live on in KV records, coach
+  // pages and GHL fields — and ignores an old `coach:<code>` entry they replace.
+  'formerCodes',
   // true/false overrides config.sharedMemory for this coach only. Absent means
   // "follow the global switch". See plans/10-shared-memory-across-channels.md.
   'sharedMemory',
@@ -427,6 +431,9 @@ export function coachProblems(coaches = []) {
   // `slug` too: GET /api/coach-page finds a coach by it, so two sharing one
   // would put one author's name on the other's page.
   const seen = { ghlTag: new Map(), shopifyProductId: new Map(), ghlProductId: new Map(), slug: new Map() };
+  // Every code in use, current or former: one code must name one coach, forever.
+  const current = new Map(coaches.map((c) => [String(c.code), c.index]));
+  const formerSeen = new Map();
 
   for (const coach of coaches) {
     const where = coach.code ? `coach "${coach.code}"` : `coaches[${coach.index}]`;
@@ -444,6 +451,21 @@ export function coachProblems(coaches = []) {
         );
       } else {
         seen[field].set(key, coach.index);
+      }
+    }
+
+    // --- formerCodes: the old codes of a renumbered coach --------------------
+    if (coach.formerCodes !== undefined) {
+      if (!Array.isArray(coach.formerCodes)) {
+        p.push(`${where}: formerCodes must be a list of codes, e.g. ["1042"]`);
+      } else {
+        for (const old of coach.formerCodes) {
+          const k = String(old);
+          if (!/^\d{4}$/.test(k)) p.push(`${where}: formerCodes "${k}" must be a four-digit code`);
+          else if (current.has(k)) p.push(`${where}: formerCodes "${k}" is another coach's CURRENT code — one code must name one coach`);
+          else if (formerSeen.has(k)) p.push(`${where}: formerCodes "${k}" is also a former code of coaches[${formerSeen.get(k)}]`);
+          else formerSeen.set(k, coach.index);
+        }
       }
     }
 

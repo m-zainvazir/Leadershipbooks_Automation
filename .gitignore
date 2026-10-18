@@ -43,3 +43,8 @@ Thumbs.db
 # Coach page sources. They carry a Voiceflow key once filled in (the CONFIG
 # fallback), so they stay local - never committed. Decided 2026-09-30.
 /ghl-shopify subscription/freddy-v2
+
+# --- Pipeline tracker (coach-router/pipeline.mjs, plans/22) --------------------
+# Installed by `npm run pipeline -- config --guidance on`, deleted when off. The
+# committed template is coach-router/pipeline/next-step.SKILL.md.
+/.claude/skills/next-step/

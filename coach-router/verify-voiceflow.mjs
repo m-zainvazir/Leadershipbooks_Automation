@@ -29,6 +29,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { loadConfig, HERE } from './lib-config.mjs';
+import { findCoach } from './lib-find.mjs';
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -44,7 +45,7 @@ const VF_CONFIG = { tts: false, stripSSML: true, stopAll: true, excludeTypes: ['
 const DRY = has('--dry');
 const FROM_KV = has('--from-kv');
 const KEEP = has('--keep-state');
-const ONLY = valOf('--code', null);
+const ONLY = valOf('--code', null) ?? valOf('--author', null);
 // Try a candidate versionID without editing coaches.json. Nothing is written
 // anywhere, so this is the cheap way to find out which of Voiceflow's three
 // version IDs is the right one before committing it to the file and to KV.
@@ -149,9 +150,17 @@ try {
   process.exit(1);
 }
 
-if (ONLY) coaches = coaches.filter((c) => String(c.code) === String(ONLY));
+// --code takes the code, the slug or the name (lib-find.mjs).
+if (ONLY) {
+  const found = findCoach(coaches, ONLY);
+  if (found.problem) {
+    console.error(`\n${found.problem}`);
+    process.exit(1);
+  }
+  coaches = [found.coach];
+}
 if (!coaches.length) {
-  console.error(ONLY ? `No coach with code "${ONLY}".` : 'No coaches found.');
+  console.error('No coaches found.');
   process.exit(1);
 }
 

@@ -1,0 +1,30 @@
+<!--
+  ============================================================================
+  Book Coach AI — PART 1 of 2: the lesson block
+  ============================================================================
+
+  PASTE THIS into the Course360 lesson, directly above the coach iframe
+  ("About this Lesson" / the lesson description is fine).
+
+  That is all that goes in the lesson. The script lives in PART 2
+  (members-header-script.html), because the lesson editor strips <script> and
+  <button> — a self-contained block renders as an empty box or as unclickable
+  text, which looks installed but is not.
+
+  This div does two things:
+    - marks WHERE the activation UI should appear
+    - carries the logged-in member's identity, which only a GHL-rendered page
+      knows
+
+  The two merge fields must resolve on this page type. If they do not, the
+  script says so in place of the button rather than failing quietly.
+
+  Nothing else is needed here. Do not add a button — it will be removed.
+  Re-check after editing the lesson: saving re-runs the sanitiser.
+  ============================================================================
+-->
+
+<div id="coach-activate"
+     data-contact-id="{{contact.id}}"
+     data-email="{{contact.email}}"
+     style="max-width:34rem;margin:1.5rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:.5rem;font-family:inherit;line-height:1.5"></div>

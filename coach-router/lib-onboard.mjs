@@ -18,6 +18,7 @@
  * or a duplicate product costs nothing. That ordering is the point of the file.
  */
 
+import { STEP as S } from './steps.mjs';
 import { coachProblems } from './lib-config.mjs';
 
 /** book-coach.ai page slugs: lowercase words joined by single hyphens. */
@@ -27,6 +28,86 @@ export const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const COACH_PRICE = { amount: 59, currency: 'USD', interval: 'month', intervalCount: 1 };
 
 const COACH_SITE = 'https://www.book-coach.ai';
+
+/**
+ * "<Author><sep><label>" — unless the label already names the author. The
+ * wizard's default label is "<Author> – <Book title>", and a tab title or course
+ * name reading "Sue Summers - Sue Summers – …" would be a visible typo.
+ */
+/**
+ * The Course360 course's description (checklist step Course360). The same for every
+ * coach except the author's name — one wording, so no two courses drift apart.
+ */
+export function courseDescription(author) {
+  const a = String(author || '').trim() || 'the author';
+  return `Your personal AI coach, built on the teaching of ${a}. Chat with your coach right here, any time: ask questions, talk through what you are facing, and get practical next steps. You can also link your phone once and keep the same conversation going by text or by phone call.`;
+}
+
+/**
+ * The coach page's name in GHL Websites (checklist step Coach page, "Name for page") —
+ * the pattern of the site's pages: "AI Coach Final — Rob Streetman — Book Coach".
+ */
+export function coachPageName(author) {
+  return `AI Coach Final — ${String(author || '').trim() || '<Author>'} — Book Coach`;
+}
+
+/**
+ * The Zipify sales page's name (checklist step Zipify page) — the pattern of the live
+ * pages: "Book Coach AI - Freddy Davis - The Truth Mirage". Zipify builds the
+ * page's address from it (…/pages/book-coach-ai-freddy-davis-the-truth-mirage).
+ */
+export function zipifyPageName(author, bookTitle) {
+  return ['Book Coach AI', String(author || '').trim(), String(bookTitle || '').trim()].filter(Boolean).join(' - ');
+}
+
+/**
+ * The page's "URL and Handle" (after /pages/), made from its name the way
+ * Shopify does: lowercase, apostrophes dropped, everything else a hyphen.
+ * "Book Coach AI - Freddy Davis - The Truth Mirage" -> book-coach-ai-freddy-davis-the-truth-mirage
+ */
+export function zipifyHandle(author, bookTitle) {
+  return zipifyPageName(author, bookTitle).normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** The page's Meta Title — the live pages' pattern: "The Truth Mirage + BookCoach AI | LeadershipBooks.com". */
+export const zipifyMetaTitle = (bookTitle) => `${String(bookTitle || '').trim()} + BookCoach AI | LeadershipBooks.com`;
+
+/**
+ * The 11-character id of a YouTube video, from any link a person would paste:
+ * youtube.com/watch?v=…, youtu.be/…, /shorts/…, /embed/…, /live/…, m. and www.,
+ * with &t= or &list= on the end — or the bare id. '' when it is not one.
+ */
+export function youtubeId(raw) {
+  const s = String(raw || '').trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(s)) return s;
+  let u;
+  try { u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`); } catch { return ''; }
+  const host = u.hostname.toLowerCase().replace(/^(www\.|m\.|music\.)/, '');
+  let id = '';
+  if (host === 'youtu.be') id = u.pathname.split('/')[1] || '';
+  else if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
+    if (u.pathname === '/watch') id = u.searchParams.get('v') || '';
+    else id = (/^\/(?:embed|shorts|live|v)\/([^/?#]+)/.exec(u.pathname) || [])[1] || '';
+  }
+  return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+}
+
+/**
+ * The book video's embed code for the Zipify sales page (checklist step Zipify page) — the
+ * exact form the live pages use, the video looping as its own playlist.
+ */
+export function youtubeEmbed(raw) {
+  const id = youtubeId(raw);
+  return id ? `<iframe src="https://www.youtube.com/embed/${id}?playlist=${id}&autoplay=0&loop=1&mute=0&controls=1"  loading="lazy" width="100%" height="100%" preload="metadata" allowfullscreen="1" mozallowfullscreen="" webkitallowfullscreen="" oallowfullscreen="" msallowfullscreen=""></iframe>` : '';
+}
+
+export function withAuthor(author, label, sep = ' - ') {
+  const a = String(author || '').trim();
+  const l = String(label || '').trim();
+  if (a && l && l.toLowerCase().includes(a.toLowerCase())) return l;
+  return [a, l].filter(Boolean).join(sep);
+}
 
 /**
  * GHL product naming, from plans/20 §7b-bis (decided 2026-09-24). Kept
@@ -351,39 +432,42 @@ export async function applyGhl({ ghl, locationId, entry, inspection }) {
 /** The manual steps still left, filled in with this author's exact values. */
 export function remainingSteps({ entry, slug, label, priceId, sharedCourse = false }) {
   const c = slugConventions(slug);
+  // Step numbers from the step list, by key — a reorder renumbers these too.
+  const n = (key) => String(S[key]).padEnd(3);
   const a = entry.displayName;
   const lines = [
-    `Still manual — in this order (new-author-runbook.md):`,
+    `Still to do — checklist numbering (further-automation-v1.md). Track it: npm run pipeline -- status --code ${entry.code}`,
     ``,
-    `  2  Coach page      clone ${COACH_SITE}/freddy-davis to /${slug}, then set in CONFIG:`,
-    `                     authorName: "${a}", bookTitle: "${label || entry.bookTitle}",`,
-    `                     pageTitle: "${a} - ${label || entry.bookTitle}", COACH_CODE: "${entry.code}",`,
-    `                     authorInitials, authorPhotoURL, books[] -> this author's book,`,
-    `                     authorURL -> THIS author's page (Freddy's still points at Stickler's),`,
-    `                     CONNECTION: "worker", VF_API_KEY: "", VF_VERSION_ID: "${entry.versionID}",`,
-    `                     VF_PROJECT_ID: "${entry.projectID}", showActivation: true`,
-    `  3  Shopify         "${entry.bookTitle} [${a}] + Your Personal AI Coach", $29.95, SKU BC<ISBN>, real weight`,
+    `  ${n('coachPage')}Coach page      (comes before this step — if not done yet) Onboard -> step ${S.coachPage} -> "Save and build the page"`,
+    `                     (or npm run pipeline -- page --code ${entry.code} --copy), then paste it into the`,
+    `                     Custom Code element of a GHL page at ${COACH_SITE}/${slug}`,
+    `                     (the built page always has showActivation: true — no CONFIG to edit by hand)`,
+    `  ${n('shopify')}Shopify         "${entry.bookTitle} [${a}] + Your Personal AI Coach", $29.95, SKU BC<ISBN>, real weight`,
     `                     -> add "shopifyProductId" to coaches.json`,
-    // With the shared My Coaches course on (config.myCoaches), steps 4 and 6
+    // With the shared My Coaches course on (config.myCoaches), Course360, Lesson URL and Grant workflow
     // are already done for every author: nothing per-author in Course360.
     ...(sharedCourse ? [
-      `  4  Course360       nothing to do — served by the shared My Coaches course`,
-      `  6  Grant workflow  nothing to do — the one coach-member workflow covers every author`,
+      `  ${n('course360')}Course360       nothing to do — served by the shared My Coaches course`,
     ] : [
-      `  4  Course360       "BookCoach AI — ${a} — ${label || entry.bookTitle}", ONE lesson, Offer FREE, not listed`,
+      `  ${n('course360')}Course360       "BookCoach AI — ${withAuthor(a, label || entry.bookTitle, ' — ')}", ONE lesson, Offer FREE, not listed`,
       `                     iframe src: ${c.iframeSrc}`,
-      `                     -> add the MEMBER lesson URL as "courseLessonUrl" (strip everything from ?)`,
-      `  6  Grant workflow  "Book Coach — Grant Course (${a})": Contact Tag added = ${entry.ghlTag}`,
+      `  ${n('lessonUrl')}               -> add the MEMBER lesson URL as "courseLessonUrl" (strip everything from ?)`,
+    ]),
+    `  ${n('zipify')}Zipify page     "${zipifyPageName(a, entry.bookTitle)}" — cart link https://leadershipbooks.com/cart/<VARIANT_ID>:1`,
+    `  ${n('salesUrl')}               -> record its address: npm run author -- set --code ${entry.code} --bookLandingUrl <url>`,
+    `  ${n('funnel')}Funnel page     clone the $59 funnel to /${slug}-coach-access`,
+    `                     order form -> product ${entry.ghlProductId}, price ${priceId}`,
+    ...(sharedCourse ? [
+      `  ${n('grant')}Grant workflow  nothing to do — the one coach-member workflow covers every author`,
+    ] : [
+      `  ${n('grant')}Grant workflow  "Book Coach — Grant Course (${a})": Contact Tag added = ${entry.ghlTag}`,
       `                     -> Grant Offer -> PUBLISH before the first order`,
     ]),
-    `  8  Funnel page     clone the $59 funnel to /${slug}-coach-access`,
-    `                     order form -> product ${entry.ghlProductId}, price ${priceId}`,
-    `  9  Zipify page     cart link https://leadershipbooks.com/cart/<VARIANT_ID>:1`,
     ``,
     `Then:  npm run seed            dry run — zero warnings means the author is complete`,
-    `       npm run push            live in ~60 s`,
+    `  ${n('goLive')}  npm run push            live in ~60 s`,
     `       npm run verify:vf -- --code ${entry.code}`,
-    `       a real $0 order (runbook step 11) — nothing here replaces it`,
+    `       a real $0 order (checklist step ${S.e2e}) — nothing here replaces it`,
   ];
   return lines.join('\n');
 }
