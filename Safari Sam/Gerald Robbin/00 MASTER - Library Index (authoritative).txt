@@ -1,0 +1,51 @@
+MASTER LIBRARY INDEX — AUTHORITATIVE LIST OF EVERY BOOK BY DR. GERALD D. ROBISON
+
+THIS DOCUMENT IS THE ONLY AUTHORITY on which books exist, how many there are, what each one is, and whether it can be bought. Never answer a question about the library from memory, from a general search, or by assembling a list out of book content. Retrieve this document and answer from it.
+
+If a title does not appear in this document, it is not part of the library and must not be described or recommended.
+
+=== SECTION A: PUBLISHED AND AVAILABLE, FULL TEXT LOADED ===
+These may be described in detail and recommended for purchase.
+
+1. The Innkeeper — Another perspective on the original Christmas story. Adults and families. 18 chapters, 58 pages, illustrated by Jordan Blackstone, foreword by Phil Tuttle of Walk Thru the Bible. Parrhesia Publishing. Hardcover 978-1-965401-94-1, paperback 978-1-965401-95-8. The innkeeper of Bethlehem, Migdal Eder, the priestly shepherds and the Day of Atonement lambs.
+2. The Battle Rages On — A Panoramic Look at Spiritual Realities and Spiritual Warfare From Before Time Began. Adults. 18 chapters, 206 pages, written as letters between Adam and Jesus. Leadership Books, with a companion workbook. Spiritual warfare, the angelic rebellions, the Divine Council, giants, demons, magic, the armor of God.
+3. Before I Was Jesus — Twenty-Five Secret Identities of Jesus. Adults. 26 chapters plus Introduction, Prologue and Epilogue, 118 pages. ISBN 978-0-9822607-4-6 paperback. Written as if Jesus himself is telling his own story: the pre-incarnate Christ, theophanies, the I AM sayings and the Jehovah names.
+4. Where Did Grandpa Go? That's What I Want to Know. Children, grief. 34 pages, picture book with a Parent's Guide. Parrhesia Publishing, ISBN 978-1-951648-79-4. Helps a small child grieve the death of a grandfather.
+5. Where Did Grandma Go? That's What I Want to Know. Children, grief. 34 pages, picture book with a Parent's Guide. Parrhesia Publishing, ISBN 978-1-971546-30-8. The companion volume, for the death of a grandmother.
+
+The Because He Liked It series — children's picture books, one creature or wonder per page. Published, full text loaded. Parrhesia Publishing. Series page: parrhesiapublishing.com/because-he-liked-it
+6. Because He Liked It: 101 Glimpses of God's Glory in the Animal World — 63 pages. The original volume. Art by Fred Sayers, hosted by Safari Sam. Mammals, whales, birds, sharks, insects, and a long run on bats.
+7. Because He Liked It: Cosmos — 91 pages. Illustrated by Jordan Blackstone. Space, stars, planets, oceans, weather, geology, the scale of the universe.
+8. Because He Liked It: Crabby Crabs — 73 pages. Art by Fred Sayers. Misleading title: it is sea creatures, oddball animals, birds, insects and predators. The sand crab is only page one.
+9. Because He Liked It: Elephants Recall It All — 74 pages. Art by Fred Sayers. Misleading title: it is animal memory, senses and intelligence, plus rare and deep-sea creatures.
+10. Because He Liked It: Plants — 80 pages. Fruit, trees, seeds, flowers, meat-eating plants, plant defences.
+11. Because He Liked It: Worms Curl and Twirl — 84 pages. Art by Fred Sayers. Misleading title: it is amphibians, insects, dangerous animals and creatures that change shape or sex.
+12. Because He Liked It! Coloring Book — 21 line-art plates to colour. Art by Bob Drost. Cartoons drawn from Because He Liked It and Crocs Eat Rocks.
+
+=== SECTION B: UNPUBLISHED MANUSCRIPTS, FULL TEXT LOADED ===
+These may be discussed and taught from in full, because the manuscripts are here. They may NOT be recommended for purchase and no price, availability, publisher or release date may be given. If a reader wants one, say it is finished but not yet published, and that they can watch for it.
+
+13. Fury and Grace — The God whose wrath we fear is the God whose mercy we need. Adults. Introduction plus 12 chapters in four parts. Recovering the holiness, anger and judgment of God, ending at the cross where fury and mercy meet.
+14. It's Always Darkest — Before It Gets Darker: Finding hope when the bottom isn't the bottom. Adults. Introduction plus 12 chapters in five parts, each taking one biblical figure whose darkness got worse before it got better.
+15. Emissary — More Than Saved, For More Than Heaven. Adults. 15 chapters plus a Conclusion, in four parts: Saved From, More Than Saved, Saved For, More Than Heaven. What Christ rescues us from and what He rescues us for.
+16. Unfathomable. Adults. Introduction plus 28 chapters walking the whole biblical story, asking what can and cannot be fathomed about God.
+17. 30-Seconds That Can Change Your Life, with 630 achievable things you can do in half-a-minute. General readers of any age. Practical, list-driven, on using the unused crumbs of time.
+
+=== SECTION C: KNOWN TITLES, TEXT NOT LOADED ===
+You know these titles exist. You must NOT describe what is inside them, summarise them, quote them, or answer content questions about them. Say you know the title but do not have the text here.
+
+A Dog's Tale: An Allegory on What's Gone Wrong in Missions and Evangelism.
+Cat and Dog Theology: Rethinking Our Relationship With Our Master, with Bob Sjogren.
+Cat and Dog Prayer: Rethinking Our Conversations With Our Master, with Bob Sjogren.
+Cat and Dog Theology Study Guide, with Phil Luckett.
+Crocs Eat Rocks: Another 101 Glimpses of God's Glory in the Animal World.
+A Beginner's Guide to Understanding Spiritual Warfare.
+Spiritual Warfare: If I'm a Soldier, Where's the War?
+The Story of the Bible, with Bob Sjogren.
+The Final Curtain: How Do You Want to Die? — announced as coming soon.
+
+=== HOW TO UPDATE THIS DOCUMENT (for the site owner, not the reader) ===
+This is the only document that needs editing when the library changes. Nothing in the agent's prompt or playbooks needs to change.
+To add a book whose text you are also uploading: add a numbered line to Section A if it is published, or Section B if it is an unpublished manuscript, following the same shape — title, audience, chapter or page count, publisher and ISBN if known, then one sentence on what it covers. Then remove the title from Section C if it is listed there.
+To add a title you are not uploading text for: add one line to Section C.
+Counts are never stated as totals anywhere in this document on purpose, so that adding a book never makes anything else wrong.
