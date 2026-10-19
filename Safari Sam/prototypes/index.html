@@ -1,0 +1,213 @@
+<title>Safari Sam's Amazing World</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:ital,wght@0,400;0,700;1,400&family=Luckiest+Guy&display=swap">
+<style>
+/* Layout: a picture-book title, then the three main-world options as cards with a tiny drawing of each,
+   then what is inside every gate and the 21 places. Paper and ink like the books; dark mode keeps the ink feel. */
+:root {
+  --bg: #fffaf0;
+  --card: #ffffff;
+  --ink: #2b2118;
+  --muted: #6e5f4d;
+  --line: #2b2118;
+  --soft: #f3e8d2;
+  --khaki: #e2c486;
+  --red: #c8432f;
+  --display: 'Luckiest Guy', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif;
+  --body: 'Andika', 'Segoe UI', system-ui, sans-serif;
+  --emoji: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #1a1611; --card: #251f18; --ink: #f4e9d6; --muted: #c4b49b; --line: #8c7a60; --soft: #2f281f; --khaki: #c9a95f; --red: #ef7a62; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #1a1611; --card: #251f18; --ink: #f4e9d6; --muted: #c4b49b; --line: #8c7a60; --soft: #2f281f; --khaki: #c9a95f; --red: #ef7a62; color-scheme: dark; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 400 1.05rem/1.55 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.page { max-width: 1120px; margin: 0 auto; padding-block: 28px 56px; }
+a { color: inherit; }
+
+.intro { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; }
+.intro svg { width: clamp(84px, 14vw, 128px); height: auto; }
+h1 { margin: 0; font: 400 clamp(2rem, 5.6vw, 3.6rem)/1 var(--display); letter-spacing: .03em; text-wrap: balance; }
+.lede { margin: 10px 0 0; max-width: 62ch; color: var(--muted); }
+.lede b { color: var(--ink); }
+
+h2 { margin: 44px 0 14px; font: 400 clamp(1.4rem, 3vw, 1.9rem)/1.1 var(--display); letter-spacing: .03em; text-wrap: balance; }
+
+.options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 900px) { .options { grid-template-columns: 1fr; } }
+.opt { display: flex; flex-direction: column; min-width: 0; background: var(--card); border: 3px solid var(--line); border-radius: 22px; overflow: hidden; }
+.opt-pic { height: 150px; border-bottom: 3px solid var(--line); position: relative; overflow: hidden; }
+.opt-body { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px 18px; flex: 1; }
+.opt-tag { font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.opt h3 { margin: 0; font: 400 1.6rem/1 var(--display); letter-spacing: .03em; }
+.opt p { margin: 0; }
+.opt ul { margin: 0; padding-left: 1.1em; }
+.opt li { margin: 2px 0; }
+.opt .k { font-weight: 700; font-size: .9rem; }
+.go {
+  margin-top: auto; align-self: flex-start; display: inline-flex; gap: 8px; align-items: center;
+  padding: 9px 18px; font-weight: 700; text-decoration: none; color: #2b2118;
+  background: var(--khaki); border: 3px solid #2b2118; border-radius: 999px; box-shadow: 0 4px 0 #2b2118;
+}
+.go:hover { filter: brightness(1.06); }
+.go:focus-visible { outline: 4px solid #ffd23f; outline-offset: 3px; }
+
+/* tiny drawings of each option (illustrations, same in both themes) */
+.mini-a { background: linear-gradient(90deg, #8fd0f7 0 30%, #f7c27e 30% 58%, #7fd9ea 58% 80%, #2c2160 80%); }
+.mini-a .road { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; background: linear-gradient(90deg, #ddd6c6 0 30%, #caa46e 30% 58%, #c08a52 58% 80%, #6d6593 80%); border-top: 3px solid rgba(0, 0, 0, .25); }
+.mini-a .arch { position: absolute; bottom: 34px; width: 30px; height: 44px; border: 3px solid #2b2118; border-bottom: 0; border-radius: 15px 15px 0 0; background: #c98a4b; }
+.mini-a .sam { position: absolute; bottom: 8px; left: 14%; width: 16px; height: 22px; border-radius: 8px 8px 4px 4px; background: #e2c486; border: 2px solid #2b2118; }
+.mini-b { background: #3fa9d8; }
+.mini-b .isl { position: absolute; left: 22%; top: 12%; width: 56%; height: 78%; border-radius: 48% 52% 44% 56% / 50% 46% 54% 50%; background: #8fd06a; box-shadow: 0 0 0 7px #f3dda2, 0 0 0 16px #7dd3ec; }
+.mini-b .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 3px solid #2b2118; }
+.mini-b .ice { position: absolute; left: 6%; top: 8%; width: 16%; height: 18%; border-radius: 50%; background: #f4fbff; }
+.mini-b .deep { position: absolute; left: -6%; bottom: -16%; width: 34%; height: 48%; border-radius: 50%; background: radial-gradient(#06173a, rgba(6, 23, 58, 0) 70%); }
+.mini-c { display: grid; grid-template-rows: 1fr 1fr 1fr 1fr 1.2fr 1.6fr; }
+.mini-c > div { position: relative; }
+.mini-c .split { display: grid; grid-template-columns: 43fr 57fr; }
+.mini-c .ring { position: absolute; top: 50%; width: 14px; height: 14px; transform: translateY(-50%); border-radius: 50%; background: #fff; border: 3px solid #2b2118; }
+
+.inside { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 900px) { .inside { grid-template-columns: 1fr; } }
+.inside div { min-width: 0; padding: 16px 18px; background: var(--soft); border-radius: 18px; }
+.inside h3 { margin: 0 0 4px; font-size: 1.1rem; }
+.inside p { margin: 0; color: var(--muted); }
+
+.hoods { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 900px) { .hoods { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .hoods { grid-template-columns: 1fr; } }
+.hood { min-width: 0; padding: 14px 16px; border: 3px solid var(--line); border-top: 10px solid var(--hc); border-radius: 16px; background: var(--card); }
+.hood h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.hood ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.hood li { display: flex; justify-content: space-between; gap: 8px; }
+.hood li span:last-child { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hood .i { font-family: var(--emoji); margin-right: 6px; }
+.note { margin-top: 36px; padding: 16px 18px; border: 2px dashed var(--line); border-radius: 16px; color: var(--muted); max-width: 78ch; }
+.note p { margin: 0 0 6px; } .note p:last-child { margin: 0; }
+code { font-size: .9em; background: var(--soft); padding: 1px 6px; border-radius: 6px; }
+</style>
+
+<div class="page">
+  <header class="intro">
+    <svg viewBox="0 0 120 150" aria-hidden="true">
+      <path d="M26 150 Q28 106 60 102 Q92 106 94 150 Z" fill="#c9a46a" stroke="#2b2118" stroke-width="3"/>
+      <path d="M46 104 L60 124 L74 104 Z" fill="#d94f3d" stroke="#2b2118" stroke-width="2.5" stroke-linejoin="round"/>
+      <ellipse cx="31" cy="74" rx="6" ry="8" fill="#e8b386" stroke="#2b2118" stroke-width="2.5"/>
+      <ellipse cx="89" cy="74" rx="6" ry="8" fill="#e8b386" stroke="#2b2118" stroke-width="2.5"/>
+      <circle cx="60" cy="70" r="29" fill="#f1c194" stroke="#2b2118" stroke-width="3"/>
+      <circle cx="49" cy="72" r="4.2" fill="#2b2118"/><circle cx="71" cy="72" r="4.2" fill="#2b2118"/>
+      <circle cx="50.6" cy="70.4" r="1.5" fill="#fff"/><circle cx="72.6" cy="70.4" r="1.5" fill="#fff"/>
+      <circle cx="41" cy="82" r="5" fill="#f08f7d" opacity=".55"/><circle cx="79" cy="82" r="5" fill="#f08f7d" opacity=".55"/>
+      <path d="M50 84 Q60 94 70 84" stroke="#7a3b2a" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+      <ellipse cx="60" cy="50" rx="48" ry="9.5" fill="#b58f52" stroke="#2b2118" stroke-width="3"/>
+      <path d="M25 50 Q26 12 60 12 Q94 12 95 50 Z" fill="#e2c486" stroke="#2b2118" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M26.5 41 Q60 47 93.5 41 L94.6 48 Q60 54 25.4 48 Z" fill="#7a5a2e"/>
+      <circle cx="60" cy="12" r="4" fill="#b58f52" stroke="#2b2118" stroke-width="2.5"/>
+    </svg>
+    <div>
+      <h1>Safari Sam's Amazing World</h1>
+      <p class="lede">Three ways to lay out the main world, for children aged 6 and up. Each one has the same <b>21 gates</b>, and the inside of a gate is the same in all three, so you only compare how the world is laid out. Start with <b>Home</b> and the <b>Zoo</b>: they are the fully built places.</p>
+    </div>
+  </header>
+
+  <h2>Pick a main world</h2>
+  <div class="options">
+    <article class="opt">
+      <div class="opt-pic mini-a" aria-hidden="true">
+        <span class="arch" style="left:8%"></span><span class="arch" style="left:20%"></span><span class="arch" style="left:36%"></span>
+        <span class="arch" style="left:48%"></span><span class="arch" style="left:64%;border-radius:50%;height:30px;bottom:44px"></span><span class="arch" style="left:86%;background:#8a7fc0"></span>
+        <span class="road"></span><span class="sam"></span>
+      </div>
+      <div class="opt-body">
+        <span class="opt-tag">Option A · side-scrolling</span>
+        <h3>Explorer Street</h3>
+        <p>A long street you swipe sideways. The gates stand in a row: Hometown, then the Wild Lands, then a boardwalk by the sea, then a night path to space. Sam walks to the gate you tap and the doors swing open.</p>
+        <p class="k">Good</p>
+        <ul><li>Closest to what you described</li><li>Very easy to understand</li><li>A new gate just makes the street longer</li></ul>
+        <p class="k">Watch out</p>
+        <ul><li>21 gates is a long walk</li><li>You only see a few gates at a time</li></ul>
+        <a class="go" href="option-a-street.html">Open Explorer Street →</a>
+      </div>
+    </article>
+
+    <article class="opt">
+      <div class="opt-pic mini-b" aria-hidden="true">
+        <span class="deep"></span><span class="ice"></span><span class="isl"></span>
+        <span class="dot" style="left:40%;top:38%"></span><span class="dot" style="left:52%;top:30%"></span><span class="dot" style="left:56%;top:52%"></span>
+        <span class="dot" style="left:30%;top:58%"></span><span class="dot" style="left:66%;top:40%"></span><span class="dot" style="left:10%;top:62%"></span><span class="dot" style="left:86%;top:28%"></span>
+      </div>
+      <div class="opt-body">
+        <span class="opt-tag">Option B · map from above</span>
+        <h3>Safari Island</h3>
+        <p>One island seen from above. Each place sits where it belongs in nature: town in the middle, mountains and caves to the north, jungle and forest to the west, savanna and desert to the east, ocean and a deep trench all around. Tap a place: Sam travels there and the map zooms in.</p>
+        <p class="k">Good</p>
+        <ul><li>Feels most like a world to explore</li><li>Everything visible at once</li><li>The map itself teaches where creatures live</li></ul>
+        <p class="k">Watch out</p>
+        <ul><li>The biggest drawing job for the illustrators</li><li>On a phone you drag the map around</li></ul>
+        <a class="go" href="option-b-island.html">Open Safari Island →</a>
+      </div>
+    </article>
+
+    <article class="opt">
+      <div class="opt-pic mini-c" aria-hidden="true">
+        <div style="background:#120f3a"><span class="ring" style="left:46%"></span></div>
+        <div style="background:#6ec2f7"><span class="ring" style="left:46%"></span></div>
+        <div style="background:#d2e7f5"><span class="ring" style="left:36%"></span><span class="ring" style="left:56%"></span></div>
+        <div style="background:#f6dfae"><span class="ring" style="left:20%"></span><span class="ring" style="left:38%"></span><span class="ring" style="left:56%"></span><span class="ring" style="left:74%"></span></div>
+        <div style="background:#d9f1c6;border-bottom:4px solid #6dbb4a"><span class="ring" style="left:14%"></span><span class="ring" style="left:28%"></span><span class="ring" style="left:42%"></span><span class="ring" style="left:56%"></span><span class="ring" style="left:70%"></span><span class="ring" style="left:84%"></span></div>
+        <div class="split"><div style="background:linear-gradient(#8d6b47,#4a3322)"></div><div style="background:linear-gradient(#4fbbe3,#0b3466)"></div></div>
+      </div>
+      <div class="opt-body">
+        <span class="opt-tag">Option C · scroll up and down</span>
+        <h3>Top-to-Bottom World</h3>
+        <p>The world cut open like a cake. You start in Hometown and scroll up through the wild lands, mountains and sky to space, or down under the ground on one side and deeper and darker into the sea on the other. A height bar shows where Sam is.</p>
+        <p class="k">Good</p>
+        <ul><li>Teaches “where does it live: high, low, deep?”</li><li>Scrolling up and down is natural on phones</li><li>Cosmos, the animal books and Plants all fit</li></ul>
+        <p class="k">Watch out</p>
+        <ul><li>Feels more like a poster than free roaming</li><li>Hometown is a crowded row of six</li></ul>
+        <a class="go" href="option-c-updown.html">Open Top-to-Bottom World →</a>
+      </div>
+    </article>
+  </div>
+
+  <h2>Inside every gate</h2>
+  <div class="inside">
+    <div><h3>Room scene: Home</h3><p>A doll's house cut open. The hamster in its cage, a spider in the corner, the cat on the sofa, a goldfish bowl, the canary by the kitchen window, a mouse hole, and the dog by its kennel in the backyard.</p></div>
+    <div><h3>Walk-along scene: Zoo</h3><p>A wide zoo path you swipe along, past 12 enclosures: big cats, elephants, a savanna yard, gorillas, pandas, polar bears, penguins, kangaroos, a river pool, flamingos, a camel and a rainforest house.</p></div>
+    <div><h3>Quick scenes: the other 19</h3><p>Built straight from the creature list: land, greenhouse, ice, water, sky, cave, underground and space. In the Deep Sea you move a flashlight around to find the creatures.</p></div>
+  </div>
+  <p class="lede">Tap any creature: it jumps, a card shows the book's question and fact, then <b>Why did God do that?</b> answers <b>Because He liked it!</b></p>
+
+  <h2>The 21 places</h2>
+  <div class="hoods" id="hoods"></div>
+
+  <div class="note">
+    <p>Emoji are stand-ins for the books' illustrations. Sam is a simple stand-in drawing too.</p>
+    <p>The facts come from the compiled book notes. 371 of the 495 entries have only one fact; the plan suggests what to merge.</p>
+    <p>Plan: <code>Safari Sam/plans/01-world-ui-prototypes.md</code></p>
+  </div>
+</div>
+
+<script src="shared/worlds.js"></script>
+<script>
+(function () {
+  const { hoods, worlds } = window.SAFARI;
+  const box = document.getElementById('hoods');
+  hoods.forEach((h) => {
+    const list = worlds.filter((w) => w.hood === h.id);
+    const el = document.createElement('section');
+    el.className = 'hood';
+    el.style.setProperty('--hc', h.color);
+    el.innerHTML = `<h3>${h.name}</h3><ul>${list.map((w) =>
+      `<li><span><span class="i" aria-hidden="true">${w.icon}</span>${w.name}</span><span>${w.creatures.length} to meet</span></li>`).join('')}</ul>`;
+    box.append(el);
+  });
+})();
+</script>

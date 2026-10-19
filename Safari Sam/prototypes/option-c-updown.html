@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Top-to-Bottom World</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Luckiest+Guy&display=swap">
+<link rel="stylesheet" href="shared/scene.css">
+<link rel="stylesheet" href="shared/hub.css">
+<style>
+/* Option C — Top-to-Bottom World: the world cut open like a cake. Scroll up from Hometown to the sky and
+   space, or down under the ground (left) and under the sea (right). A height bar shows where Sam is. */
+body { display: grid; grid-template-rows: auto 1fr; overflow: hidden; background: #0b0b2a; }
+.tower { position: relative; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { .tower { scroll-behavior: auto; } }
+
+.band {
+  --g: clamp(78px, 10.6vw, 132px);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: center;
+  padding: 70px max(70px, env(safe-area-inset-right, 0px)) 48px max(16px, env(safe-area-inset-left, 0px));
+}
+.band-label {
+  position: absolute; top: 16px; left: max(16px, env(safe-area-inset-left, 0px)); z-index: 2;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.band-label b { font: 400 clamp(1.3rem, 3vw, 2rem)/1 var(--ss-font-display); letter-spacing: .04em; color: var(--lab, #fff); text-shadow: 2px 2px 0 rgba(0, 0, 0, .35); }
+.band-label span { font-weight: 700; font-size: .95rem; color: var(--lab, #fff); opacity: .85; }
+.deco { position: absolute; inset: 0; pointer-events: none; }
+.deco > * { position: absolute; }
+.e { transform: translate(-50%, -50%); font-family: var(--ss-font-emoji); line-height: 1; font-size: var(--s); }
+.e.drift { animation: ss-drift 14s ease-in-out infinite alternate; }
+
+.gates { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 18px clamp(12px, 2.2vw, 34px); }
+.gate {
+  display: flex; flex-direction: column; align-items: center; gap: 12px; width: calc(var(--g) + 28px);
+  margin: 0; padding: 0; border: 0; background: none; color: var(--ss-ink); font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.gate-ring {
+  width: var(--g); height: var(--g); display: grid; place-items: center; border-radius: 50%;
+  font-family: var(--ss-font-emoji); font-size: calc(var(--g) * .48); line-height: 1;
+  background: radial-gradient(circle at 50% 38%, rgba(255, 255, 255, .55), transparent 62%), var(--peek);
+  border: 5px solid var(--ss-ink);
+  box-shadow: 0 0 0 7px var(--hood), 0 0 0 10px var(--ss-ink), 0 12px 0 8px rgba(0, 0, 0, .22);
+  transition: transform .2s cubic-bezier(.3, 1.6, .5, 1);
+}
+.gate:hover .gate-ring, .gate:focus-visible .gate-ring { transform: scale(1.08) rotate(-4deg); }
+.gate-name {
+  margin-top: 6px; padding: 4px 12px 5px; text-align: center; text-wrap: balance;
+  font: 700 clamp(.85rem, 1.6vw, 1.05rem)/1.1 var(--ss-font-body);
+  background: var(--ss-paper); border: 3px solid var(--ss-ink); border-radius: 12px;
+}
+.gate:focus-visible { outline: none; }
+.gate:focus-visible .gate-name { background: var(--ss-sun); }
+
+/* the bands, top to bottom */
+.b-space { min-height: 66vh; background: radial-gradient(ellipse at 25% 40%, rgba(140, 70, 220, .45), transparent 50%), radial-gradient(ellipse at 80% 70%, rgba(40, 170, 210, .3), transparent 45%), linear-gradient(#05051a, #1b1450); }
+.b-sky { min-height: 58vh; background: linear-gradient(#1b1450, #3d63c9 30%, #6ec2f7 65%, #b6e3ff); }
+.b-high { min-height: 58vh; background: linear-gradient(#b6e3ff, #e1f3ff); --lab: #24405e; }
+.b-wild { min-height: 58vh; background: linear-gradient(#e1f3ff, #fde9c4 70%); --lab: #6b4a1f; }
+.b-town { min-height: 68vh; padding-bottom: 86px; background: linear-gradient(#fde9c4, #d9f1c6 55%); --lab: #6b3a1f; }
+.peak { bottom: 0; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: linear-gradient(#fff 0 17%, #a59a91 17%); }
+.peak.ice { background: linear-gradient(#fff 0 40%, #cfe8f7 40%); }
+.hill { bottom: -8vh; height: 22vh; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+.surface { left: 0; right: 0; bottom: 0; height: 46px; background: linear-gradient(90deg, #6dbb4a 0 43%, #f1d9a0 43% 47%, transparent 47%); }
+.surface::after { content: ''; position: absolute; left: 47%; right: 0; bottom: 0; height: 30px; background: linear-gradient(#7fdcf5, #4fbbe3); }
+.star { width: 3px; height: 3px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px #fff; animation: ss-twinkle 3s ease-in-out infinite; }
+
+/* the split: under the ground (left) and under the sea (right) */
+.b-split { display: grid; grid-template-columns: 43fr 57fr; padding: 0; justify-content: stretch; }
+.col { position: relative; overflow: hidden; display: grid; grid-auto-rows: minmax(54vh, auto); }
+.col.land { background: linear-gradient(#a8835c, #8d6b47 25%, #6e4f30 55%, #4a3322 85%, #2e1f14); }
+.col.sea { background: linear-gradient(#4fbbe3, #1b78b4 30%, #0b3466 62%, #03081a 92%); }
+.row { position: relative; display: flex; flex-direction: column; justify-content: center; padding: 64px 12px 36px; }
+.col.land .row { padding-left: max(12px, env(safe-area-inset-left, 0px)); }
+.col.sea .row { padding-right: max(64px, env(safe-area-inset-right, 0px)); }
+.row .gates { gap: 18px 16px; }
+.tunnel { height: 34px; border-radius: 999px; background: #2e1f14; opacity: .7; box-shadow: inset 0 6px 0 rgba(0, 0, 0, .3); }
+.core { left: -20%; right: -20%; bottom: -16vh; height: 34vh; border-radius: 50% 50% 0 0; background: radial-gradient(ellipse at 50% 100%, #fff3b0, #ffb627 25%, #ff6a1f 55%, rgba(255, 80, 20, 0) 72%); animation: ss-glow 3s ease-in-out infinite alternate; }
+.ray { top: -6%; width: 10%; height: 70%; transform: rotate(12deg); transform-origin: top; background: linear-gradient(rgba(255, 255, 255, .25), rgba(255, 255, 255, 0)); }
+.bub { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .6); animation: ss-rise 9s linear infinite; }
+.glow { width: 6px; height: 6px; border-radius: 50%; background: #9ff0ff; box-shadow: 0 0 12px #9ff0ff; animation: ss-twinkle 2.6s ease-in-out infinite; }
+.hint {
+  position: absolute; left: 50%; z-index: 2; transform: translateX(-50%);
+  padding: 6px 14px; white-space: nowrap; font-weight: 700; font-size: .95rem;
+  background: rgba(255, 250, 240, .9); border: 3px solid var(--ss-ink); border-radius: 999px;
+}
+.hint.up { top: 18px; } .hint.down { bottom: 54px; }
+
+/* Sam standing in Hometown */
+.sam-stand { position: absolute; z-index: 2; left: max(16px, 4vw); bottom: 40px; width: clamp(64px, 9vw, 104px); }
+.sam-stand .hub-say { left: 50%; bottom: calc(100% + 10px); transform: translate(-30px, 6px) scale(.94); transform-origin: 30px 100%; }
+.sam-stand .hub-say.show { transform: translate(-30px, 0); }
+.sam-stand .hub-say::after { left: 30px; }
+
+/* the height bar */
+.rail {
+  position: fixed; z-index: 8; right: max(8px, env(safe-area-inset-right, 0px)); top: calc(50% + 26px); transform: translateY(-50%);
+  height: min(70vh, 560px); width: 48px;
+  background: rgba(255, 250, 240, .9); border: 3px solid var(--ss-ink); border-radius: 999px;
+}
+.rail-stop {
+  position: absolute; left: 50%; transform: translate(-50%, -50%);
+  width: 34px; height: 34px; display: grid; place-items: center; padding: 0;
+  font-family: var(--ss-font-emoji); font-size: 18px; line-height: 1; cursor: pointer;
+  background: #fff; border: 2px solid var(--ss-ink); border-radius: 50%;
+}
+.rail-stop span { position: absolute; right: calc(100% + 10px); top: 50%; transform: translateY(-50%); white-space: nowrap; font: 700 .8rem/1 var(--ss-font-body); color: var(--ss-ink); background: var(--ss-paper); border: 2px solid var(--ss-ink); border-radius: 999px; padding: 3px 8px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.rail-stop:hover span, .rail-stop:focus-visible span { opacity: 1; }
+.rail-sam { position: absolute; left: 50%; width: 46px; transform: translate(-50%, -60%); pointer-events: none; transition: top .25s ease-out; z-index: 2; }
+
+/* opening a gate: a circle of the place's colour grows out of the gate */
+.iris { position: fixed; inset: 0; z-index: 40; pointer-events: none; clip-path: circle(0 at var(--x) var(--y)); transition: clip-path .6s cubic-bezier(.6, 0, .3, 1); }
+.iris.grow { clip-path: circle(150vmax at var(--x) var(--y)); }
+@media (max-width: 620px) { .rail { width: 40px; } .rail-stop { width: 28px; height: 28px; font-size: 15px; } .rail-sam { width: 38px; } .band:not(.b-split) { padding-right: 58px; } .hint { font-size: .8rem; } .hint.up { top: 54px; } .col.sea .row { padding-right: 56px; } }
+@media (prefers-reduced-motion: reduce) { .iris, .gate-ring, .rail-sam { transition: none !important; } .e, .star, .bub, .glow, .core { animation: none !important; } }
+</style>
+</head>
+<body>
+<header class="hub-bar">
+  <a class="hub-back" href="index.html">← Options</a>
+  <h1 class="hub-name">Safari Sam's Amazing World</h1>
+  <span class="hub-opt">Option C · Top-to-Bottom World</span>
+</header>
+
+<main class="tower" id="tower" aria-label="Top-to-Bottom World">
+  <section class="band b-space" data-stop="🚀" data-name="Space">
+    <div class="band-label"><b>Space</b><span>way, way up</span></div>
+    <div class="deco" data-stars="70">
+      <span class="e" style="left:12%;top:34%;--s:64px">🪐</span><span class="e" style="left:84%;top:26%;--s:58px">🌕</span>
+      <span class="e drift" style="left:58%;top:16%;--s:40px">☄️</span><span class="e drift" style="left:28%;top:76%;--s:36px">🛰️</span>
+    </div>
+    <div class="gates" data-ids="space"></div>
+  </section>
+
+  <section class="band b-sky" data-stop="☁️" data-name="Sky">
+    <div class="band-label"><b>Sky</b><span>up high</span></div>
+    <div class="deco">
+      <span class="e drift" style="left:10%;top:40%;--s:70px">☁️</span><span class="e drift" style="left:34%;top:78%;--s:56px">☁️</span>
+      <span class="e drift" style="left:72%;top:30%;--s:80px">☁️</span><span class="e drift" style="left:86%;top:76%;--s:60px">☁️</span>
+      <span class="e" style="left:22%;top:22%;--s:34px">✈️</span><span class="e" style="left:62%;top:70%;--s:44px">🎈</span>
+      <span class="e" style="left:48%;top:24%;--s:24px">🐦</span><span class="e" style="left:52%;top:20%;--s:20px">🐦</span>
+    </div>
+    <div class="gates" data-ids="sky"></div>
+  </section>
+
+  <section class="band b-high" data-stop="🏔️" data-name="Mountains & Ice">
+    <div class="band-label"><b>Mountains &amp; Ice</b><span>high and cold</span></div>
+    <div class="deco">
+      <div class="peak" style="left:-4%;width:34%;height:58%"></div><div class="peak" style="left:20%;width:26%;height:44%"></div>
+      <div class="peak ice" style="left:60%;width:30%;height:40%"></div><div class="peak ice" style="left:78%;width:28%;height:52%"></div>
+      <span class="e" style="left:44%;top:24%;--s:40px">🦅</span>
+    </div>
+    <div class="gates" data-ids="mountains,polar"></div>
+  </section>
+
+  <section class="band b-wild" data-stop="🌄" data-name="Wild Lands">
+    <div class="band-label"><b>Wild Lands</b><span>far away from town</span></div>
+    <div class="deco">
+      <div class="hill" style="left:-10%;width:60%;background:#b7d98f"></div><div class="hill" style="left:40%;width:70%;background:#e6cf8a"></div>
+      <span class="e" style="left:8%;top:84%;--s:44px">🌲</span><span class="e" style="left:30%;top:88%;--s:40px">🌴</span>
+      <span class="e" style="left:62%;top:86%;--s:40px">🌳</span><span class="e" style="left:84%;top:88%;--s:40px">🌵</span>
+    </div>
+    <div class="gates" data-ids="forest,jungle,savanna,desert,islands"></div>
+  </section>
+
+  <section class="band b-town" id="town" data-stop="🏡" data-name="Hometown">
+    <div class="band-label"><b>Hometown</b><span>where we live</span></div>
+    <div class="hint up">⬆ Scroll up to the sky and space</div>
+    <div class="deco">
+      <span class="e" style="left:12%;top:30%;--s:40px">🏡</span><span class="e" style="left:88%;top:26%;--s:40px">🏠</span>
+      <span class="e" style="left:78%;top:34%;--s:36px">🌳</span><div class="surface"></div>
+    </div>
+    <div class="gates" data-ids="home,farm,garden,greenhouse,park,zoo"></div>
+    <div class="sam-stand" id="sam"></div>
+    <div class="hint down">⬇ Scroll down under the ground and the sea</div>
+  </section>
+
+  <section class="band b-split" data-stop="⛏️" data-name="Under the ground & sea">
+    <div class="col land">
+      <div class="deco">
+        <div class="tunnel" style="left:8%;top:14%;width:44%"></div><div class="tunnel" style="left:46%;top:38%;width:40%"></div>
+        <div class="tunnel" style="left:12%;top:62%;width:36%"></div>
+        <span class="e" style="left:78%;top:18%;--s:30px">🦴</span><span class="e" style="left:20%;top:48%;--s:26px">🪨</span>
+        <span class="e" style="left:70%;top:72%;--s:26px">💎</span><div class="core"></div>
+      </div>
+      <div class="row"><div class="band-label"><b>Under the ground</b></div><div class="gates" data-ids="underground"></div></div>
+      <div class="row"><div class="gates" data-ids="night"></div></div>
+      <div class="row"></div>
+    </div>
+    <div class="col sea">
+      <div class="deco" data-glow="26">
+        <div class="ray" style="left:10%"></div><div class="ray" style="left:40%"></div><div class="ray" style="left:70%"></div>
+        <span class="e" style="left:18%;top:26%;--s:24px">🐟</span><span class="e" style="left:76%;top:22%;--s:22px">🐠</span>
+        <span class="e" style="left:30%;top:31%;--s:26px">🪸</span><span class="e" style="left:64%;top:48%;--s:30px">🐬</span>
+      </div>
+      <div class="row"><div class="band-label"><b>Under the sea</b></div><div class="gates" data-ids="pond,reef"></div></div>
+      <div class="row"><div class="gates" data-ids="ocean"></div></div>
+      <div class="row" data-stop="🔦" data-name="Deep sea"><div class="gates" data-ids="deep"></div></div>
+    </div>
+  </section>
+</main>
+
+<nav class="rail" id="rail" aria-label="Go up or down"></nav>
+
+<script src="shared/worlds.js"></script>
+<script src="shared/facts.js"></script>
+<script src="shared/scene.js"></script>
+<script>
+(function () {
+  const { hoods, worlds } = window.SAFARI;
+  const tower = document.getElementById('tower');
+  const rail = document.getElementById('rail');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rnd = (() => { let s = 11; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+  const node = (tag, cls, inner) => { const n = document.createElement(tag); n.className = cls; if (inner != null) n.innerHTML = inner; return n; };
+
+  // stars, bubbles and glowing specks
+  document.querySelectorAll('[data-stars]').forEach((d) => {
+    for (let i = 0; i < +d.dataset.stars; i++) {
+      const s = node('i', 'star');
+      Object.assign(s.style, { left: rnd() * 100 + '%', top: rnd() * 100 + '%', animationDelay: -rnd() * 3 + 's' });
+      d.append(s);
+    }
+  });
+  document.querySelectorAll('[data-glow]').forEach((d) => {
+    for (let i = 0; i < +d.dataset.glow; i++) {
+      const deep = i % 2 === 0;
+      const s = node('i', deep ? 'glow' : 'bub');
+      Object.assign(s.style, { left: rnd() * 100 + '%', top: (deep ? 66 + rnd() * 32 : 10 + rnd() * 80) + '%', animationDelay: -rnd() * 9 + 's' });
+      d.append(s);
+    }
+  });
+
+  // gates
+  document.querySelectorAll('.gates[data-ids]').forEach((row) => {
+    row.dataset.ids.split(',').forEach((id) => {
+      const w = worlds.find((x) => x.id === id);
+      const hood = hoods.find((h) => h.id === w.hood);
+      const g = node('button', 'gate', `<span class="gate-ring" aria-hidden="true">${w.icon}</span><span class="gate-name">${w.name}</span>`);
+      g.type = 'button';
+      g.style.setProperty('--hood', hood.color);
+      g.style.setProperty('--peek', w.peek);
+      g.setAttribute('aria-label', 'Go into ' + w.name);
+      g.addEventListener('click', () => go(w, g));
+      row.append(g);
+    });
+  });
+
+  // Sam in Hometown
+  const samBox = document.getElementById('sam');
+  samBox.innerHTML = window.SafariScene.sam() + '<div class="hub-say" aria-live="polite"></div>';
+  const bubble = samBox.querySelector('.hub-say');
+  let sayT;
+  const say = (t, ms) => {
+    bubble.textContent = t;
+    bubble.classList.add('show');
+    clearTimeout(sayT);
+    sayT = setTimeout(() => bubble.classList.remove('show'), ms || 4000);
+  };
+
+  // height bar: one stop per band (and the deep end), Sam's face slides along as you scroll
+  const stops = [...document.querySelectorAll('[data-stop]')];
+  const railSam = node('div', 'rail-sam', window.SafariScene.sam());
+  rail.append(railSam);
+  const stopBtns = stops.map((s) => {
+    const b = node('button', 'rail-stop', `${s.dataset.stop}<span>${s.dataset.name}</span>`);
+    b.type = 'button';
+    b.setAttribute('aria-label', s.dataset.name);
+    b.addEventListener('click', () => s.scrollIntoView({ block: 'start' }));
+    rail.append(b);
+    return b;
+  });
+  const top = (el) => el.getBoundingClientRect().top - tower.getBoundingClientRect().top + tower.scrollTop;
+  function layoutRail() {
+    const total = tower.scrollHeight;
+    stops.forEach((s, i) => { stopBtns[i].style.top = ((top(s) + s.offsetHeight / 2) / total * 100) + '%'; });
+    onScroll();
+  }
+  function onScroll() {
+    const mid = tower.scrollTop + tower.clientHeight / 2;
+    railSam.style.top = (mid / tower.scrollHeight * 100) + '%';
+  }
+  tower.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', layoutRail);
+
+  // start at Hometown
+  const town = document.getElementById('town');
+  requestAnimationFrame(() => {
+    tower.style.scrollBehavior = 'auto';
+    tower.scrollTop = top(town) - 8;
+    tower.style.scrollBehavior = '';
+    layoutRail();
+  });
+  setTimeout(() => say('We’re in Hometown! Scroll up to fly to the sky, or down to dig and dive.', 6500), 500);
+
+  // going in: a circle of the place's colour grows out of the gate, then the place opens
+  let busy = false;
+  function go(w, g) {
+    if (busy || window.SafariScene.isOpen()) return;
+    busy = true;
+    bubble.classList.remove('show');
+    const r = g.querySelector('.gate-ring').getBoundingClientRect();
+    const iris = node('div', 'iris');
+    iris.style.background = w.peek;
+    iris.style.setProperty('--x', r.left + r.width / 2 + 'px');
+    iris.style.setProperty('--y', r.top + r.height / 2 + 'px');
+    document.body.append(iris);
+    requestAnimationFrame(() => requestAnimationFrame(() => iris.classList.add('grow')));
+    setTimeout(() => {
+      window.SafariScene.open(w.id, {
+        onClose: () => {
+          iris.classList.remove('grow');
+          setTimeout(() => { iris.remove(); busy = false; }, reduce ? 0 : 620);
+        }
+      });
+    }, reduce ? 0 : 560);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+/* Safari Sam — bits shared by the three main-world options (top bar, Sam's hub speech bubble). */
+html, body { height: 100%; margin: 0; }
+body {
+  font-family: var(--ss-font-body); color: var(--ss-ink);
+  -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+}
+.hub-bar {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; gap: 12px;
+  padding: calc(6px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--ss-paper); border-bottom: 4px solid var(--ss-ink);
+}
+.hub-back {
+  padding: 4px 12px; white-space: nowrap;
+  font-weight: 700; font-size: .9rem; color: var(--ss-ink); text-decoration: none;
+  border: 2px solid var(--ss-ink); border-radius: 999px;
+}
+.hub-back:hover, .hub-back:focus-visible { background: var(--ss-khaki); outline: none; }
+.hub-name {
+  min-width: 0; margin: 0; padding-top: .15em;
+  font: 400 clamp(1.05rem, 2.6vw, 1.6rem)/1 var(--ss-font-display); letter-spacing: .03em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hub-opt {
+  margin-left: auto; padding: 4px 12px; white-space: nowrap;
+  font-size: .85rem; font-weight: 700; color: var(--ss-paper); background: var(--ss-ink); border-radius: 999px;
+}
+@media (max-width: 560px) { .hub-opt { display: none; } }
+
+/* Sam's speech bubble in the main world (tail points down at Sam) */
+.hub-say {
+  position: absolute; z-index: 6; width: max-content; max-width: min(34ch, 70vw);
+  padding: 9px 13px; font-weight: 700; font-size: clamp(.9rem, 2.2vh, 1.1rem); line-height: 1.35;
+  background: #fff; border: 3px solid var(--ss-ink); border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, .2);
+  opacity: 0; transform: translate(-50%, 6px) scale(.94); transition: opacity .25s, transform .25s; pointer-events: none;
+}
+.hub-say::after {
+  content: ''; position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+  border: 9px solid transparent; border-top: 12px solid var(--ss-ink);
+}
+.hub-say.show { opacity: 1; transform: translate(-50%, 0); }
+.hub-btn:focus-visible, .gate:focus-visible { outline: 4px solid var(--ss-sun); outline-offset: 4px; }

@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Explorer Street</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&family=Luckiest+Guy&display=swap">
+<link rel="stylesheet" href="shared/scene.css">
+<link rel="stylesheet" href="shared/hub.css">
+<style>
+/* Option A — Explorer Street: one long street you swipe sideways. Gates stand in a row, grouped
+   into four neighbourhoods; each neighbourhood has its own sky and road. Sizes in cqh = 1% of the street's height. */
+body { display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; background: #7cc8f5; }
+
+.street {
+  position: relative; container-type: size;
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+}
+.street::-webkit-scrollbar { display: none; }
+.track { position: relative; height: 100cqh; width: calc(var(--len) * 1cqh); }
+.track > *, .layer > * { position: absolute; }
+.layer { inset: 0; pointer-events: none; }
+.at { left: calc(var(--x) * 1cqh); }
+
+/* neighbourhood skies, far scenery and road */
+.seg-sky {
+  top: 0; bottom: 0; left: calc(var(--a) * 1cqh); width: calc(var(--w) * 1cqh);
+  background: linear-gradient(var(--s1), var(--s2) 74%);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16cqh);
+  mask-image: linear-gradient(90deg, transparent, #000 16cqh);
+}
+.seg-sky.first { -webkit-mask-image: none; mask-image: none; }
+.seg-far { bottom: 23cqh; height: 40cqh; left: calc(var(--a) * 1cqh); width: calc(var(--w) * 1cqh); pointer-events: none; }
+.seg-far > * { position: absolute; }
+.far-e { bottom: 0; transform: translateX(-50%); font-family: var(--ss-font-emoji); line-height: 1; font-size: calc(var(--s) * 1cqh); opacity: .95; }
+.hillband { left: 0; right: 0; bottom: -2cqh; height: 12cqh; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+.mount { bottom: 0; width: 34cqh; height: 26cqh; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: linear-gradient(#fff 0 18%, #b6a27c 18%); transform: translateX(-50%); }
+.mount.b { width: 26cqh; height: 19cqh; background: linear-gradient(#fff 0 16%, #a28e69 16%); }
+.sea { left: 0; right: 0; bottom: 0; height: 11cqh; background: linear-gradient(#2c9fd0, #6fd3ee); }
+.sea::before {
+  content: ''; position: absolute; left: 0; right: 0; top: -1.4cqh; height: 2.8cqh;
+  background: radial-gradient(circle at 50% 100%, #2c9fd0 1.4cqh, transparent 1.5cqh) 0 0 / 4cqh 2.8cqh repeat-x;
+}
+.star { width: .5cqh; height: .5cqh; border-radius: 50%; background: #fff; box-shadow: 0 0 1cqh #fff; animation: ss-twinkle 3s ease-in-out infinite; }
+.moon { width: 11cqh; height: 11cqh; border-radius: 50%; background: #fdf6d8; box-shadow: inset -2.2cqh -1cqh 0 #e6dcb4, 0 0 6cqh rgba(253, 246, 216, .5); }
+.cloud { font-family: var(--ss-font-emoji); line-height: 1; font-size: calc(var(--s) * 1cqh); opacity: .95; pointer-events: none; }
+
+.seg-ground { bottom: 0; height: 24cqh; left: calc(var(--a) * 1cqh); width: calc(var(--w) * 1cqh); border-top: .5cqh solid rgba(0, 0, 0, .25); }
+.g-town { background: linear-gradient(#7cc35a 0 3cqh, #5a9c41 3cqh 3.8cqh, transparent 3.8cqh), repeating-linear-gradient(90deg, #ddd6c6 0 9.6cqh, #c6bdab 9.6cqh 10cqh), #ddd6c6; }
+.g-wild { background: linear-gradient(#8fbf4f 0 3cqh, #6c9a39 3cqh 3.8cqh, transparent 3.8cqh), radial-gradient(circle, rgba(110, 80, 40, .35) .6cqh, transparent .7cqh) 0 0 / 6cqh 5cqh, #caa46e; }
+.g-water { background: linear-gradient(#2c9fd0 0 3cqh, #1b7fb0 3cqh 3.8cqh, transparent 3.8cqh), repeating-linear-gradient(90deg, #c08a52 0 5.4cqh, #8f5f33 5.4cqh 6cqh); }
+.g-beyond { background: linear-gradient(#3a3160 0 3cqh, #2a2348 3cqh 3.8cqh, transparent 3.8cqh), radial-gradient(circle, rgba(0, 0, 0, .25) 1.2cqh, transparent 1.3cqh) 0 0 / 11cqh 9cqh, #6d6593; }
+
+/* signposts, welcome and end boards */
+.post { bottom: 21cqh; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 2; }
+.post-board {
+  display: flex; align-items: center; gap: 1.2cqh; padding: 1.4cqh 5cqh 1cqh 2.4cqh;
+  font: 400 3.8cqh/1 var(--ss-font-display); letter-spacing: .03em; color: #fff; white-space: nowrap;
+  background: var(--hood); border: .5cqh solid var(--ss-ink);
+  clip-path: polygon(0 0, calc(100% - 3.4cqh) 0, 100% 50%, calc(100% - 3.4cqh) 100%, 0 100%);
+  text-shadow: .3cqh .3cqh 0 var(--ss-ink);
+}
+.post-board span { font-family: var(--ss-font-emoji); text-shadow: none; }
+.post-pole { width: 1.6cqh; height: 20cqh; background: #7a5034; border: .4cqh solid var(--ss-ink); border-top: 0; }
+.board {
+  bottom: 21cqh; transform: translateX(-50%); width: 44cqh; padding: 2.4cqh 2.6cqh 2cqh; z-index: 2; text-align: center;
+  background: var(--ss-paper); border: .6cqh solid var(--ss-ink); border-radius: 2cqh; box-shadow: 0 1cqh 0 rgba(0, 0, 0, .18);
+}
+.board h2 { margin: 0 0 1cqh; font: 400 4.8cqh/1.05 var(--ss-font-display); letter-spacing: .03em; text-wrap: balance; }
+.board p { margin: 0; font-weight: 700; font-size: max(12px, 2.6cqh); line-height: 1.3; }
+.board::before, .board::after { content: ''; position: absolute; top: 100%; width: 1.6cqh; height: 21cqh; background: #7a5034; border: .4cqh solid var(--ss-ink); border-top: 0; }
+.board::before { left: 18%; } .board::after { right: 18%; }
+
+/* gates */
+.gate {
+  bottom: 21cqh; transform: translateX(-50%); z-index: 2;
+  display: flex; flex-direction: column; align-items: center;
+  margin: 0; padding: 0; border: 0; background: none; color: var(--ss-ink); font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.gate-sign {
+  position: relative; z-index: 2; margin-bottom: -.6cqh; padding: 1.2cqh 2cqh .8cqh; white-space: nowrap;
+  font: 400 3.5cqh/1 var(--ss-font-display); letter-spacing: .03em;
+  background: var(--ss-paper); border: .5cqh solid var(--ss-ink); border-radius: 1.2cqh; box-shadow: 0 .6cqh 0 rgba(0, 0, 0, .2);
+}
+.gate-frame {
+  position: relative; width: 26cqh; height: 33cqh;
+  background: var(--hood); border: .6cqh solid var(--ss-ink); border-bottom: 0; border-radius: 13cqh 13cqh 0 0;
+  box-shadow: inset 0 -2cqh 0 rgba(0, 0, 0, .14), inset 0 1.2cqh 0 rgba(255, 255, 255, .22);
+}
+.gate-hole {
+  position: absolute; left: 2.8cqh; right: 2.8cqh; top: 2.8cqh; bottom: 0; overflow: hidden;
+  display: grid; place-items: center; perspective: 50cqh;
+  background: radial-gradient(ellipse at 50% 85%, rgba(255, 255, 255, .55), transparent 62%), var(--peek);
+  border: .5cqh solid var(--ss-ink); border-bottom: 0; border-radius: 10cqh 10cqh 0 0;
+}
+.gate-icon { font-family: var(--ss-font-emoji); font-size: 10.5cqh; line-height: 1; transition: transform .5s ease; }
+.gate-door {
+  position: absolute; top: 0; bottom: 0; width: 50%;
+  background: repeating-linear-gradient(90deg, #c98a4b 0 2.6cqh, #b5763c 2.6cqh 3cqh);
+  transition: transform .55s cubic-bezier(.5, 0, .25, 1);
+}
+.gate-door.l { left: 0; transform-origin: 0 50%; border-right: .3cqh solid #6b4426; }
+.gate-door.r { right: 0; transform-origin: 100% 50%; border-left: .3cqh solid #6b4426; }
+.gate-door::after { content: ''; position: absolute; top: 56%; width: 1.6cqh; height: 1.6cqh; border-radius: 50%; background: var(--ss-sun); border: .3cqh solid #6b4426; }
+.gate-door.l::after { right: 1.2cqh; } .gate-door.r::after { left: 1.2cqh; }
+.gate:hover .gate-door.l, .gate:focus-visible .gate-door.l { transform: rotateY(-38deg); }
+.gate:hover .gate-door.r, .gate:focus-visible .gate-door.r { transform: rotateY(38deg); }
+.gate.open .gate-door.l { transform: rotateY(-102deg); }
+.gate.open .gate-door.r { transform: rotateY(102deg); }
+.gate.open .gate-icon { transform: scale(1.5); }
+.gate-badge {
+  position: absolute; z-index: 2; top: 13%; left: 50%; transform: translateX(-50%);
+  width: 13cqh; height: 13cqh; display: grid; place-items: center;
+  font-family: var(--ss-font-emoji); font-size: 7.6cqh; line-height: 1;
+  background: var(--peek); border: .5cqh solid var(--ss-ink); border-radius: 50%; box-shadow: 0 .6cqh 0 rgba(0, 0, 0, .22);
+  transition: opacity .3s, transform .3s;
+}
+.gate.open .gate-badge { opacity: 0; transform: translateX(-50%) scale(.5); }
+.gate--round .gate-badge { top: 50%; transform: translate(-50%, -50%); }
+.gate--round.open .gate-badge { transform: translate(-50%, -50%) scale(.5); }
+.gate:focus-visible { outline: none; }
+.gate:focus-visible .gate-sign { background: var(--ss-sun); }
+
+.gate--door .gate-frame { border-radius: .8cqh .8cqh 0 0; }
+.gate--door .gate-frame::before {
+  content: ''; position: absolute; left: -4cqh; right: -4cqh; bottom: 100%; height: 10cqh;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%); background: #b9472f;
+}
+.gate--door .gate-hole { border-radius: .6cqh .6cqh 0 0; }
+.gate--cave .gate-frame {
+  border-radius: 48% 52% 6% 6% / 62% 58% 0 0;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, .18) 1.2cqh, transparent 1.3cqh) 0 0 / 7cqh 6cqh, color-mix(in srgb, var(--hood) 30%, #7d6b5d);
+}
+.gate--cave .gate-hole { border-radius: 50% 50% 0 0 / 72% 72% 0 0; }
+.gate--round .gate-frame {
+  width: 28cqh; height: 28cqh; margin-bottom: 5cqh; border-radius: 50%; border-bottom: .6cqh solid var(--ss-ink);
+  background: radial-gradient(circle, #e4eef5 1cqh, transparent 1.1cqh) 0 0 / 5.2cqh 5.2cqh, #8fb1c7;
+}
+.gate--round .gate-frame::after {
+  content: ''; position: absolute; top: 100%; left: 50%; width: 4cqh; height: 5.6cqh; transform: translateX(-50%);
+  background: #5e7486; border: .4cqh solid var(--ss-ink); border-top: 0;
+}
+.gate--round .gate-hole { left: 3.4cqh; right: 3.4cqh; top: 3.4cqh; bottom: 3.4cqh; border-radius: 50%; border-bottom: .5cqh solid var(--ss-ink); }
+.gate--round .gate-door { background: repeating-linear-gradient(0deg, #9fb7c9 0 2.4cqh, #87a2b6 2.4cqh 2.8cqh); }
+
+/* Sam walking along the street */
+.walker { bottom: 5cqh; width: 15cqh; transform: translateX(-50%); z-index: 4; pointer-events: none; transition: left 1s linear; }
+.walker::after { content: ''; position: absolute; left: 15%; right: 15%; bottom: -1cqh; height: 2.4cqh; border-radius: 50%; background: rgba(0, 0, 0, .2); z-index: -1; }
+.walker.walking .sam-svg { animation: walk .3s ease-in-out infinite alternate; }
+@keyframes walk { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-1.8cqh) rotate(4deg); } }
+.walker .hub-say { left: 50%; bottom: calc(100% + 1.4cqh); transform: translate(-30px, 6px) scale(.94); transform-origin: 30px 100%; }
+.walker .hub-say.show { transform: translate(-30px, 0); }
+.walker .hub-say::after { left: 30px; }
+
+/* bottom bar: jump to a neighbourhood */
+.hoods {
+  display: flex; gap: 8px; justify-content: center; overflow-x: auto;
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: var(--ss-paper); border-top: 4px solid var(--ss-ink);
+}
+.hub-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 6px 16px 6px 10px; white-space: nowrap;
+  font: 700 1rem/1 var(--ss-font-body); color: var(--ss-ink); cursor: pointer;
+  background: #fff; border: 3px solid var(--ss-ink); border-radius: 999px; box-shadow: 0 3px 0 var(--ss-ink);
+}
+.hub-btn .i { font-family: var(--ss-font-emoji); font-size: 1.35rem; }
+.hub-btn[aria-current="true"] { background: var(--hood); color: #fff; }
+@media (max-width: 640px) { .hub-btn .t { display: none; } .hub-btn { padding: 6px 12px; } }
+
+.arrow {
+  position: fixed; top: 50%; z-index: 8; width: 52px; height: 52px; border-radius: 50%;
+  font-size: 1.2rem; color: var(--ss-ink); cursor: pointer;
+  background: var(--ss-khaki); border: 3px solid var(--ss-ink); box-shadow: 0 4px 0 var(--ss-ink);
+}
+.arrow.l { left: max(10px, env(safe-area-inset-left, 0px)); }
+.arrow.r { right: max(10px, env(safe-area-inset-right, 0px)); }
+@media (hover: none) { .arrow { display: none; } }
+@media (prefers-reduced-motion: reduce) { .walker, .gate-door, .gate-icon { transition: none !important; } .walker .sam-svg, .star { animation: none !important; } }
+</style>
+</head>
+<body>
+<header class="hub-bar">
+  <a class="hub-back" href="index.html">← Options</a>
+  <h1 class="hub-name">Safari Sam's Amazing World</h1>
+  <span class="hub-opt">Option A · Explorer Street</span>
+</header>
+
+<main class="street" id="street" aria-label="Explorer Street">
+  <div class="track" id="track"></div>
+</main>
+
+<nav class="hoods" id="hoods" aria-label="Neighbourhoods"></nav>
+<button type="button" class="arrow l" id="left" aria-label="Walk left">◀</button>
+<button type="button" class="arrow r" id="right" aria-label="Walk right">▶</button>
+
+<script src="shared/worlds.js"></script>
+<script src="shared/facts.js"></script>
+<script src="shared/scene.js"></script>
+<script>
+(function () {
+  const { hoods, worlds } = window.SAFARI;
+  const street = document.getElementById('street');
+  const track = document.getElementById('track');
+  const nav = document.getElementById('hoods');
+
+  // How each neighbourhood looks from the street.
+  const LOOK = {
+    town:   { s1: '#7cc8f5', s2: '#e3f6ff', far: '🏡🌳🏠🌳🏘️🌳🏡🌳🏠', clouds: true },
+    wild:   { s1: '#f7b267', s2: '#fde9c4', far: '🌲🌴🌳🌲🌵🌳🌲🌴', clouds: true },
+    water:  { s1: '#5fd0e6', s2: '#e0fbff', far: '⛵ 🏝️ 🐋 ⛵ 🏝️', clouds: true },
+    beyond: { s1: '#14123a', s2: '#5a3f8a', far: '', clouds: false }
+  };
+  const GATE = 40;
+  const cqh = () => street.clientHeight / 100;
+  const html = (tag, cls, inner, vars) => {
+    const n = document.createElement(tag);
+    n.className = cls;
+    if (inner != null) n.innerHTML = inner;
+    for (const k in vars || {}) n.style.setProperty('--' + k, vars[k]);
+    return n;
+  };
+  const rnd = (() => { let s = 7; return () => ((s = (s * 16807) % 2147483647) / 2147483647); })();
+
+  // ---- lay the street out (all positions in cqh units) ----
+  const gateX = {};
+  const segs = [];
+  let x = 84;
+  track.append(html('div', 'board at', '<h2>Safari Sam’s Amazing World</h2><p>Tap a gate and we’ll go in together!</p>', { x: 34 }));
+
+  hoods.forEach((h, i) => {
+    const a = i === 0 ? 0 : x;
+    track.append(html('div', 'post at', `<div class="post-board"><span>${h.icon}</span>${h.name}</div><div class="post-pole"></div>`, { x: x + 20, hood: h.color }));
+    x += 44;
+    for (const w of worlds.filter((w) => w.hood === h.id)) {
+      const g = html('button', 'gate at gate--' + w.gate, `
+        <span class="gate-sign">${w.name}</span>
+        <span class="gate-frame"><span class="gate-hole">
+          <span class="gate-icon" aria-hidden="true">${w.icon}</span>
+          <span class="gate-door l"></span><span class="gate-door r"></span>
+          <span class="gate-badge" aria-hidden="true">${w.icon}</span>
+        </span></span>`, { x: x + GATE / 2, hood: h.color, peek: w.peek });
+      g.type = 'button';
+      g.setAttribute('aria-label', 'Go into the ' + w.name);
+      g.addEventListener('click', () => go(w.id, g));
+      gateX[w.id] = x + GATE / 2;
+      track.append(g);
+      x += GATE;
+    }
+    x += 16;
+    segs.push({ h, a, b: x });
+  });
+  track.append(html('div', 'board at', '<h2>More gates soon!</h2><p>New places can be added to the end of the street.</p>', { x: x + 30 }));
+  x += 70;
+  segs[segs.length - 1].b = x;
+  track.style.setProperty('--len', x);
+
+  // ---- skies, far scenery, road (three layers, so each sky fades over the one before it) ----
+  const skyL = html('div', 'layer'), farL = html('div', 'layer'), groundL = html('div', 'layer');
+  track.prepend(skyL, farL, groundL);
+  segs.forEach((s, i) => {
+    const look = LOOK[s.h.id];
+    const from = i === 0 ? 0 : s.a - 16;
+    const W = s.b - s.a;
+    skyL.append(html('div', 'seg-sky' + (i === 0 ? ' first' : ''), null, { a: from, w: s.b - from, s1: look.s1, s2: look.s2 }));
+    groundL.append(html('div', 'seg-ground g-' + s.h.id, null, { a: s.a, w: W }));
+    const far = html('div', 'seg-far', null, { a: s.a, w: W });
+    if (s.h.id === 'town') {
+      const hills = html('div', 'hillband');
+      hills.style.background = '#9fd48a';
+      far.append(hills);
+    }
+    if (s.h.id === 'wild') {
+      for (let m = 0; m < W / 40; m++) {
+        const big = html('div', 'mount' + (m % 2 ? ' b' : ''));
+        big.style.left = ((m * 40 + 18) / W * 100) + '%';
+        far.append(big);
+      }
+    }
+    if (s.h.id === 'water') far.append(html('div', 'sea'));
+    if (s.h.id === 'beyond') {
+      for (let k = 0; k < W / 3; k++) {
+        const st = html('div', 'star');
+        st.style.left = rnd() * 100 + '%';
+        st.style.bottom = 12 + rnd() * 160 + '%';
+        st.style.animationDelay = (-rnd() * 3).toFixed(2) + 's';
+        far.append(st);
+      }
+      const moon = html('div', 'moon');
+      moon.style.left = '62%'; moon.style.bottom = '150%';
+      far.append(moon);
+      ['🪐', '🛰️'].forEach((e, k) => {
+        const f = html('span', 'far-e', e, { s: k ? 6 : 9 });
+        f.style.left = (k ? 30 : 86) + '%'; f.style.bottom = (k ? 175 : 120) + '%';
+        far.append(f);
+      });
+    }
+    const glyphs = look.far.match(/\p{Extended_Pictographic}️?/gu) || [];
+    glyphs.forEach((e, k) => {
+      const f = html('span', 'far-e', e, { s: s.h.id === 'water' ? 7 : 9 + rnd() * 3 });
+      f.style.left = ((k + 0.5) / glyphs.length * 100) + '%';
+      if (s.h.id === 'water') f.style.bottom = '5cqh';
+      far.append(f);
+    });
+    if (look.clouds) {
+      for (let c = 0; c < W / 30; c++) {
+        const cl = html('span', 'cloud at', '☁️', { x: s.a + 8 + c * 30 + rnd() * 10, s: 8 + rnd() * 6 });
+        cl.style.top = (6 + rnd() * 20) + '%';
+        farL.append(cl);
+      }
+    }
+    far.dataset.seg = i;
+    farL.append(far);
+  });
+
+  // ---- Sam ----
+  let samX = 66;
+  const walker = html('div', 'walker at', window.SafariScene.sam() + '<div class="hub-say" aria-live="polite"></div>', { x: samX });
+  track.append(walker);
+  const bubble = walker.querySelector('.hub-say');
+  let sayT;
+  const say = (t, ms) => {
+    bubble.textContent = t;
+    bubble.classList.add('show');
+    clearTimeout(sayT);
+    sayT = setTimeout(() => bubble.classList.remove('show'), ms || 4000);
+  };
+  setTimeout(() => say('Hi, I’m Safari Sam! Tap a gate and we’ll go in.', 6000), 500);
+
+  // ---- going through a gate ----
+  let busy = false;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function go(id, gateEl) {
+    if (busy || window.SafariScene.isOpen()) return;
+    busy = true;
+    bubble.classList.remove('show');
+    const to = gateX[id];
+    const dist = Math.abs(to - samX);
+    const ms = reduce ? 0 : Math.min(1500, 200 + dist * 6);
+    street.scrollTo({ left: to * cqh() - street.clientWidth / 2, behavior: reduce ? 'auto' : 'smooth' });
+    walker.style.transitionDuration = ms + 'ms';
+    walker.classList.toggle('walking', ms > 0 && dist > 1);
+    walker.style.setProperty('--x', to);
+    samX = to;
+    setTimeout(() => {
+      walker.classList.remove('walking');
+      gateEl.classList.add('open');
+      setTimeout(() => window.SafariScene.open(id, {
+        onClose: () => {
+          gateEl.classList.remove('open');
+          busy = false;
+          say('Where shall we go next?', 3000);
+        }
+      }), reduce ? 0 : 560);
+    }, ms);
+  }
+
+  // ---- neighbourhood buttons, arrows, wheel, parallax ----
+  const btns = segs.map((s) => {
+    const b = html('button', 'hub-btn', `<span class="i" aria-hidden="true">${s.h.icon}</span><span class="t">${s.h.name}</span>`, { hood: s.h.color });
+    b.type = 'button';
+    b.setAttribute('aria-label', s.h.name);
+    b.addEventListener('click', () => street.scrollTo({ left: s.a * cqh() - 8, behavior: 'smooth' }));
+    nav.append(b);
+    return b;
+  });
+  const fars = [...track.querySelectorAll('.seg-far')];
+  const clouds = [...track.querySelectorAll('.cloud')];
+  function onScroll() {
+    const k = cqh();
+    const mid = (street.scrollLeft + street.clientWidth / 2) / k;
+    const idx = Math.max(0, segs.findIndex((s) => mid >= s.a && mid < s.b));
+    btns.forEach((b, i) => b.setAttribute('aria-current', i === idx ? 'true' : 'false'));
+    if (reduce) return;
+    fars.forEach((f) => {
+      const s = segs[f.dataset.seg];
+      f.style.transform = `translateX(${(mid - (s.a + s.b) / 2) * k * 0.22}px)`;
+    });
+    clouds.forEach((c) => { c.style.transform = `translateX(${street.scrollLeft * 0.35}px)`; });
+  }
+  street.addEventListener('scroll', () => requestAnimationFrame(onScroll), { passive: true });
+  window.addEventListener('resize', onScroll);
+  onScroll();
+  street.addEventListener('wheel', (e) => {
+    if (window.SafariScene.isOpen()) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { street.scrollLeft += e.deltaY; e.preventDefault(); }
+  }, { passive: false });
+  document.getElementById('left').addEventListener('click', () => street.scrollBy({ left: -street.clientWidth * 0.7, behavior: 'smooth' }));
+  document.getElementById('right').addEventListener('click', () => street.scrollBy({ left: street.clientWidth * 0.7, behavior: 'smooth' }));
+})();
+</script>
+</body>
+</html>
