@@ -636,6 +636,10 @@ const falsy = (name, v) => t(name, !!v, false);
     p = plan({ action: 'push', code: '1043', write: true, confirm: 'push 1043' });
     t('go live: seed for real, then the secrets', p.steps.map((s) => [s.script, ...s.args]), [['seed-coaches.mjs', '--write'], ['sync-secrets.mjs', '--write']]);
     t('...and its preview is seed alone, dry', plan({ action: 'push', code: '1043' }).steps.map((s) => [s.script, ...s.args]), [['seed-coaches.mjs']]);
+    t('the end-to-end test can use a different inbox for one run', plan({ action: 'verify', code: '1043', params: { runEmail: 'Other@Real.org' } }).steps[0].args, ['--code', '1043', '--shopify-order', '--email', 'other@real.org']);
+    t('...and refuses a mailbox that cannot receive', (() => { try { plan({ action: 'verify', code: '1043', params: { runEmail: 'a@example.com' } }); return 'ran'; } catch { return 'refused'; } })(), 'refused');
+    t('free access: a real person, their exact address, the guest flag', plan({ action: 'guest', code: '1043', params: { guestEmail: 'Friend@Real.org' } }).steps[0].args, ['--code', '1043', '--shopify-order', '--guest', '--email', 'friend@real.org']);
+    t('...needs an email that can receive mail', ['', 'a@example.com', 'nope'].map((x) => { try { plan({ action: 'guest', code: '1043', params: { guestEmail: x } }); return 'ran'; } catch { return 'refused'; } }), ['refused', 'refused', 'refused']);
     t('the end-to-end test keeps the contact only when asked', plan({ action: 'verify', code: '1043', params: { keep: true } }).steps[0].args, ['--code', '1043', '--shopify-order', '--keep']);
     err = null;
     try { plan({ action: 'shopify', code: '1043', params: { price: '29.95; rm -rf /' } }); } catch (x) { err = x; }
@@ -743,8 +747,8 @@ const falsy = (name, v) => t(name, !!v, false);
           calls.push({ page: code, v });
           if (v.bad) return { problems: { authorURL: 'must be https' } };
           if (v.refused) return { error: 'coaches.json did not take the answers', job: { id: 'j2', status: 'failed', output: 'x' } };
-          if (v.leak) return { built: { name: 'jane-smith-v2', page: 'Bearer vfp_LEAKED_KEY_123' }, saved: [] };
-          return { built: { name: 'jane-smith-v2', bytes: 10 }, saved: ['authorURL'], job: null };
+          if (v.leak) return { built: { name: '1045-Jane-Smith', page: 'Bearer vfp_LEAKED_KEY_123' }, saved: [] };
+          return { built: { name: '1045-Jane-Smith', bytes: 10 }, saved: ['authorURL'], job: null };
         },
         openPage: async (code, how) => ({ ok: true, said: `${how} ${code}` }),
         checklist: (code, key, value) => { if (key !== 'video') throw new Error(`no checklist item "${key}"`); return { checklist: [{ key, checked: value }] }; },
@@ -778,7 +782,7 @@ const falsy = (name, v) => t(name, !!v, false);
     const pr = await call('POST', '/api/wizard/page', { code: '1045', values: { refused: 1 } });
     t('when coaches.json refuses the answers: 400, with the command\'s output to read', [pr.status, pr.body.job && pr.body.job.id], [400, 'j2']);
     const pg = await call('POST', '/api/wizard/page', { code: '1045', values: { authorURL: 'https://jane.example' } });
-    t('a good build says what it built and what it saved', [pg.status, pg.body.built.name, pg.body.saved], [200, 'jane-smith-v2', ['authorURL']]);
+    t('a good build says what it built and what it saved', [pg.status, pg.body.built.name, pg.body.saved], [200, '1045-Jane-Smith', ['authorURL']]);
     const pl = await call('POST', '/api/wizard/page', { code: '1045', values: { leak: 1 } });
     truthy('🔒 a build response that would carry the key is refused — the page never travels to the browser', pl.status === 500 && !JSON.stringify(pl.body).includes('vfp_LEAKED'));
     t('copy / open accept only copy, notepad or folder', (await call('POST', '/api/wizard/page/open', { code: '1045', how: 'cmd.exe' })).status, 400);
@@ -896,10 +900,10 @@ const falsy = (name, v) => t(name, !!v, false);
   // The wizard: each box is asked at its step, each button sits on its step.
   const FIELD_STEP = { displayName: 'Inputs', slug: 'Inputs', versionID: 'Voiceflow coach + IDs', authorPhotoURL: 'Coach page', books: 'Coach page', price: 'Shopify bundle',
     shopifyVariantId: 'Shopify bundle', courseLink: 'Course360', courseLessonUrl: 'Lesson URL', videoUrl: 'Zipify page',
-    collectionPrice: 'Course Collection + Bundle Image', collectionImageFile: 'Course Collection + Bundle Image', collectionProductId: 'Course Collection + Bundle Image', bookLandingUrl: 'Sales page URL', verifyEmail: 'End-to-end test', keep: 'End-to-end test' };
+    collectionPrice: 'Course Collection + Bundle Image', collectionImageFile: 'Course Collection + Bundle Image', collectionProductId: 'Course Collection + Bundle Image', bookLandingUrl: 'Sales page URL', verifyEmail: 'End-to-end test', runEmail: 'End-to-end test', guestEmail: 'End-to-end test', keep: 'End-to-end test' };
   t('🚨 every answer box is asked at its own step', Object.entries(FIELD_STEP).filter(([k, want]) => title(WZ.FIELDS[k].step) !== want).map(([k]) => `${k} → ${title(WZ.FIELDS[k].step)}`), []);
   const ACTION_STEP = { 'Coach page': ['page'], 'GHL + registry': ['onboard'], 'Shopify bundle': ['shopify', 'set'], 'Course360': ['course360'], 'Lesson URL': ['set'],
-    'Zipify page': ['set', 'landing:sales'], 'Course Collection + Bundle Image': ['shopify-collection', 'landing:collection', 'set'], 'Sales page URL': ['set'], 'Funnel page': ['generate:funnel'], 'Grant workflow': ['generate:course360'], 'Go live': ['push'], 'End-to-end test': ['verify-email', 'verify'] };
+    'Zipify page': ['set', 'landing:sales'], 'Course Collection + Bundle Image': ['shopify-collection', 'landing:collection', 'set'], 'Sales page URL': ['set'], 'Funnel page': ['generate:funnel'], 'Grant workflow': ['generate:course360'], 'Go live': ['push'], 'End-to-end test': ['verify-email', 'verify', 'guest'] };
   t('🚨 every button sits on its own step', Object.entries(ACTION_STEP).filter(([s, want]) => JSON.stringify(WZ.STEP_ACTIONS[idOf(s)]) !== JSON.stringify(want)).map(([s]) => s), []);
   const v = { displayName: 'Jane Smith', slug: 'jane-smith', bookTitle: 'Her Book', coachLabel: 'Her Coach', shopifyVariantId: '9', ghlProductId: 'P', versionID: '6a3339b6eb283c59b70cfa53' };
   const INFO_STEP = { 'Coach page': 'Publish the page at', 'GHL + registry': 'GHL tag it will create', 'Shopify bundle': 'Product title', 'Course360': '…with this description',
@@ -1090,11 +1094,11 @@ const falsy = (name, v) => t(name, !!v, false);
 
   console.log('\npage - where the file goes');
   {
-    t('a new author gets <slug>-v2', [PG.pageFileFor(jane, { dir }).name, PG.pageFileFor(jane, { dir }).exists], ['jane-smith-v2', false]);
-    writeFileSync(join(dir, 'ms-v2'), '   const CONFIG = {\n    COACH_CODE: "1042",\n  };\n');
-    t('an author who already has a page keeps it — found by its code, even a former one', PG.pageFileFor({ code: '1001', formerCodes: ['1042'], slug: 'michael-stickler' }, { dir }).name, 'ms-v2');
-    writeFileSync(join(dir, 'ms-v2.bak-20261002-101010'), '   const CONFIG = {\n    COACH_CODE: "1045",\n  };\n');
-    t('...and a backup file is never mistaken for a page', PG.pageFileFor(jane, { dir }).name, 'jane-smith-v2');
+    t('a new author gets <code>-<Author-Name>', [PG.pageFileFor(jane, { dir }).name, PG.pageFileFor(jane, { dir }).exists], ['1045-Jane-Smith', false]);
+    writeFileSync(join(dir, '1001-Michael-Stickler'), '   const CONFIG = {\n    COACH_CODE: "1042",\n  };\n');
+    t('an author who already has a page keeps it — found by its code, even a former one', PG.pageFileFor({ code: '1001', formerCodes: ['1042'], slug: 'michael-stickler' }, { dir }).name, '1001-Michael-Stickler');
+    writeFileSync(join(dir, '1001-Michael-Stickler.bak-20261002-101010'), '   const CONFIG = {\n    COACH_CODE: "1045",\n  };\n');
+    t('...and a backup file is never mistaken for a page', PG.pageFileFor(jane, { dir }).name, '1045-Jane-Smith');
   }
 
   console.log('\npage - the answers');
@@ -1118,21 +1122,21 @@ const falsy = (name, v) => t(name, !!v, false);
     const now = new Date('2026-10-02T10:20:30Z');
     let r = PG.buildPage(jane, { connection: 'auto', includeKey: true, courses: [{ title: 'Course A', url: 'https://c/a' }] }, { shared, secrets, template, dir, now });
     const page = readFileSync(join(dir, r.name), 'utf8');
-    t('the whole page is written as <slug>-v2, next to the others', [r.name, existsSync(join(dir, 'jane-smith-v2'))], ['jane-smith-v2', true]);
+    t('the whole page is written as <code>-<Author-Name>, next to the others', [r.name, existsSync(join(dir, '1045-Jane-Smith'))], ['1045-Jane-Smith', true]);
     truthy('it carries this author: code, router address, name, version', page.includes('COACH_CODE: "1045"') && page.includes('WORKER_URL: "https://w.example"') && page.includes('authorName: "Jane Smith"') && page.includes('VF_VERSION_ID: "6a3339b6eb283c59b70cfa53"'));
     truthy('...the activation button, the book and course buttons', page.includes('showActivation: true') && page.includes('showBooks: true') && page.includes('showCourses: true') && page.includes('{ title: "Course A", url: "https://c/a" }'));
     truthy('...and the key, because the form asked for the backup', page.includes(`VF_API_KEY: "Bearer ${KEY}"`) && r.includesKey);
     truthy('the rest of the master page is kept exactly', page.includes('  start(CONFIG);\n</script>\n<p>page body</p>'));
     t('a first build makes no backup', r.backup, null);
     r = PG.buildPage(jane, { connection: 'worker', includeKey: false }, { shared, secrets, template, dir, now });
-    t('building again keeps the previous version as a backup', [r.backup, existsSync(join(dir, 'jane-smith-v2.bak-20261002-102030'))], ['jane-smith-v2.bak-20261002-102030', true]);
+    t('building again keeps the previous version as a backup', [r.backup, existsSync(join(dir, '1045-Jane-Smith.bak-20261002-102030'))], ['1045-Jane-Smith.bak-20261002-102030', true]);
     const noKey = readFileSync(join(dir, r.name), 'utf8');
     truthy('🔒 without the box ticked, the page holds no key at all', !noKey.includes(KEY) && noKey.includes('VF_API_KEY: "Bearer "') && noKey.includes('CONNECTION: "worker"'));
     let err = null;
     writeFileSync(template, `<p>pit-0123456789abcdef</p>\n${PG.TEMPLATE_BLOCK}\n`);
     try { PG.buildPage(jane, { includeKey: true }, { shared, secrets, template, dir, now: new Date('2026-10-02T11:00:00Z') }); } catch (x) { err = x; }
     truthy('🔒 any OTHER credential in the result is a refusal', err && /credential/.test(err.message));
-    t('...and nothing was written', readFileSync(join(dir, 'jane-smith-v2'), 'utf8'), noKey);
+    t('...and nothing was written', readFileSync(join(dir, '1045-Jane-Smith'), 'utf8'), noKey);
     writeFileSync(template, `<html>\n<script>\n${PG.TEMPLATE_BLOCK}\n</script>\n</html>\n`);
     err = null;
     try { PG.buildPage(jane, { includeKey: true }, { shared: { workerUrl: 'https://w' }, secrets, template, dir }); } catch (x) { err = x; }
@@ -1164,7 +1168,7 @@ const falsy = (name, v) => t(name, !!v, false);
     const sub1 = A.coachPageConfig({ ...jane, coachLabel: 'Jane Smith – Her Book' }, { workerUrl: 'w' });
     const sub2 = A.coachPageConfig({ ...jane, coachLabel: 'Jane Smith – Her Book' }, { workerUrl: 'w', subtitle: 'Worldview Coach' });
     t('the page shows the book title there by default — not the coach label — and the typed line when there is one', [/bookTitle: "([^"]*)"/.exec(sub1)[1], /bookTitle: "([^"]*)"/.exec(sub2)[1]], ['Her Book', 'Worldview Coach']);
-    t('...and it says where the file is', [view.file.name, view.file.exists, view.publishAt], ['jane-smith-v2', true, 'https://www.book-coach.ai/jane-smith']);
+    t('...and it says where the file is', [view.file.name, view.file.exists, view.publishAt], ['1045-Jane-Smith', true, 'https://www.book-coach.ai/jane-smith']);
     falsy('🔒 the view never carries the key', JSON.stringify(view).includes(KEY));
     t('a new author opens with the key box ticked (the backup, as ms-v2 and freddy-v2 have)', PG.pageFormView(jane, { shared, dir, template }).fields.find((f) => f.key === 'includeKey').value, true);
     const fresh = Object.fromEntries(PG.pageFormView(jane, { shared, dir, template }).fields.filter((f) => f.type === 'toggle').map((f) => [f.key, f.value]));
@@ -1179,7 +1183,7 @@ const falsy = (name, v) => t(name, !!v, false);
   {
     const tpl = join(dir, 'new-template.html');
     PG.buildPage(jane, { includeKey: true }, { shared, secrets, template, dir, now: new Date('2026-10-02T12:00:00Z') });
-    const r = PG.refreshTemplate(join(dir, 'jane-smith-v2'), { secrets, coaches: [jane], template: tpl });
+    const r = PG.refreshTemplate(join(dir, '1045-Jane-Smith'), { secrets, coaches: [jane], template: tpl });
     const out = readFileSync(tpl, 'utf8');
     truthy('its CONFIG block is emptied — the key and the author go with it', out.includes(PG.TEMPLATE_BLOCK) && !out.includes(KEY) && !out.includes('Jane Smith') && r.changed);
     writeFileSync(join(dir, 'stray'), `<p>Jane Smith</p>\n${PG.TEMPLATE_BLOCK}\n`);
@@ -1205,9 +1209,9 @@ const falsy = (name, v) => t(name, !!v, false);
     t('the clipboard gets UTF-16 text with no byte-order mark (it would paste as an invisible character)', [seen.cmd, seen.opts.shell, [...seen.buf]], ['clip.exe', false, [...Buffer.from('— →', 'utf16le')]]);
     const opened = [];
     const fakeOpen = (cmd, args, opts) => { opened.push([cmd, args, !!opts.windowsVerbatimArguments, opts.shell]); return { unref() {} }; };
-    PG.showPage('D:\\a b\\jane-smith-v2', 'folder', { spawnImpl: fakeOpen });
-    PG.showPage('D:\\a b\\jane-smith-v2', 'notepad', { spawnImpl: fakeOpen });
-    t('"Show in folder" selects the file; "Open" uses Notepad; never a shell', opened, [['explorer.exe', ['/select,"D:\\a b\\jane-smith-v2"'], true, false], ['notepad.exe', ['D:\\a b\\jane-smith-v2'], false, false]]);
+    PG.showPage('D:\\a b\\1045-Jane-Smith', 'folder', { spawnImpl: fakeOpen });
+    PG.showPage('D:\\a b\\1045-Jane-Smith', 'notepad', { spawnImpl: fakeOpen });
+    t('"Show in folder" selects the file; "Open" uses Notepad; never a shell', opened, [['explorer.exe', ['/select,"D:\\a b\\1045-Jane-Smith"'], true, false], ['notepad.exe', ['D:\\a b\\1045-Jane-Smith'], false, false]]);
     let err = null;
     try { PG.showPage('D:\\x" & calc', 'folder', { spawnImpl: fakeOpen }); } catch (x) { err = x; }
     truthy('🔒 a path with a quote is refused', err);

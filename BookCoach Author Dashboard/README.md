@@ -97,7 +97,7 @@ and rebuilds byte for byte.
 it count — "Save to coaches.json", or the button's "— for real"), in a yellow line above the boxes, and beside the
 step in the step list. A Preview never uses it for real; a real run or a save clears the mark.
 
-Every real change shows a **Preview (dry run)** first, then asks you to confirm. Only nine commands
+Every real change shows a **Preview (dry run)** first, then asks you to confirm. Only ten commands
 can run at all (`lib-actions.mjs`), never through a shell, one at a time, and any credential in
 their output is blanked out before you see it.
 
@@ -114,15 +114,15 @@ and press **Save and build the page**:
 
 - answers that belong in `coaches.json` are saved there with `author set` (backed up, validated) —
   or, before step 3 has created the author, kept in the draft until step 3 saves them;
-- the whole page is written to `../ghl-shopify subscription/<name>-v2` — Stickler keeps `ms-v2`,
-  Freddy `freddy-v2`, a new author gets `<slug>-v2` — and the version it replaces is kept as
-  `<name>-v2.bak-<date>`. These files can hold the key, so they are gitignored;
+- the whole page is written to `../All Coaches/<code>-<Author-Name>` (for example `1001-Michael-Stickler`) —
+  an author who already has a page keeps it, and the version it replaces is kept as
+  `<code>-<Author-Name>.bak-<date>`. These files can hold the key, so they are gitignored;
 - **Copy the whole page** puts it on the clipboard (done on this PC — the page never travels to the
   browser), then in GHL: the page's Custom Code element → Ctrl+A, Ctrl+V → Save → Publish.
 
 From the terminal: `npm run pipeline -- page --author rick --copy` rebuilds from the saved answers.
 If the page's code itself ever changes, make the finished page the new master for everyone with
-`npm run pipeline -- page-template --from "../ghl-shopify subscription/<name>-v2"` (refused if it
+`npm run pipeline -- page-template --from "../All Coaches/<code>-<Author-Name>"` (refused if it
 would leave a key or an author's name outside `CONFIG`), then build each author's page again.
 
 ## The switches — all off by default

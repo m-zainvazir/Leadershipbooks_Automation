@@ -632,7 +632,8 @@
       const x = values();
       if (action === 'shopify') return { price: x.price, sku: x.sku, grams: x.grams, imageFile: x.imageFile, imageUrl: x.imageUrl };
       if (action === 'shopify-collection') return { price: x.collectionPrice, imageFile: x.collectionImageFile, imageUrl: x.collectionImageUrl };
-      if (action === 'verify') return { keep: !!x.keep };
+      if (action === 'verify') return { keep: !!x.keep, runEmail: x.runEmail };
+      if (action === 'guest') return { guestEmail: x.guestEmail };
       if (action === 'course360') return { course: x.courseLink };
       return {};
     };

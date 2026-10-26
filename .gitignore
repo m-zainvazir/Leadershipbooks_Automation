@@ -48,3 +48,6 @@ Thumbs.db
 # Installed by `npm run pipeline -- config --guidance on`, deleted when off. The
 # committed template is coach-router/pipeline/next-step.SKILL.md.
 /.claude/skills/next-step/
+
+# Coach pages (can hold the Voiceflow key) - built by the BookCoach Author Dashboard
+/All Coaches/

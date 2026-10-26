@@ -190,8 +190,24 @@ export const ACTIONS = {
     timeoutMs: 20 * 60 * 1000,
     build({ code, params }) {
       const args = ['--code', code, '--shopify-order'];
+      // One run, one inbox: not saved anywhere (the saved test inbox stays the default).
+      const [runEmail, e] = (params && params.runEmail) ? validateField('runEmail', params.runEmail) : ['', null];
+      if (e) throw new Error(e);
+      if (runEmail) args.push('--email', runEmail);
       if (params && params.keep) args.push('--keep');
       return { steps: [{ script: 'verify-author.mjs', args }] };
+    },
+  },
+  guest: {
+    label: 'Give free access',
+    changes: 'places a REAL $0 Shopify order for this author\'s bundle in this person\'s name (then cancels the order), gives them the normal free trial of the coach, and sends them the REAL welcome email. Their contact is kept',
+    dry: true,
+    needsAuthor: true,
+    timeoutMs: 20 * 60 * 1000,
+    build({ code, params }) {
+      const [email, e] = validateField('guestEmail', (params && params.guestEmail) || '');
+      if (e || !email) throw new Error(e || 'the person\'s email is required');
+      return { steps: [{ script: 'verify-author.mjs', args: ['--code', code, '--shopify-order', '--guest', '--email', email] }] };
     },
   },
 };

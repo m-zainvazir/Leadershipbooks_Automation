@@ -261,6 +261,8 @@ export const STEP_HELP = {
     how: [
       'Open the Onboard tab → step 14.',
       'Type your test inbox (a real inbox you read) and press "Save the test inbox".',
+      'Want this one run to go to a different inbox (a colleague, say)? Type it in "Send THIS run to a different inbox" — optional, used once, not saved. Leave it empty to use the saved one.',
+      'To give a real person free access instead (someone who should not pay): fill in "Give a person free access — their email", press "Preview (dry run)", then "Give free access — for real". They get the normal free trial and the welcome email. Their contact is kept.',
       'Tick "Keep the test contact" if you want to check the emails by hand in step 15.',
       'Press "Preview (dry run)", then "Run the end-to-end test — for real". It can take up to 10 minutes.',
     ],

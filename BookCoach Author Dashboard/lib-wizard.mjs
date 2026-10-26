@@ -73,6 +73,8 @@ export const FIELDS = {
   videoUrl: { step: S.zipify, where: 'record', label: 'Book video on YouTube (optional)', help: 'Has the book a video? Paste its normal YouTube link and press Save — the code to paste on the sales page appears under "What you need for this step"' },
   bookLandingUrl: { step: S.salesUrl, where: 'record', label: 'Sales page URL', help: 'https://leadershipbooks.com/pages/…' },
   verifyEmail: { step: S.e2e, where: 'shared', label: 'Test inbox', help: 'A real inbox you read — the test sends a real welcome email there' },
+  runEmail: { step: S.e2e, where: 'param', label: 'Send THIS run to a different inbox (optional)', placeholder: 'someone@theirdomain.com', help: 'Blank = the saved test inbox above. Used for this one run only — nothing is saved. A real inbox: the test sends it a real welcome email' },
+  guestEmail: { step: S.e2e, where: 'param', label: 'Give a person free access — their email', placeholder: 'friend@theirdomain.com', help: 'For someone who should not pay. They get the normal free trial and the welcome email. Pick the author above, press Preview, then "Give free access — for real". Their contact is kept; nothing is deleted' },
   keep: { step: S.e2e, where: 'param', type: 'checkbox', label: 'Keep the test contact for the hands-on check (the next step)', help: 'Unticked: the test cleans itself up after 5 minutes' },
 };
 
@@ -156,7 +158,9 @@ export function validateField(key, raw, { coaches = [], drafts = {}, code = '' }
       const src = coaches.find((c) => c.code === s && c.code !== code);
       return src ? [s, null] : [null, 'pick an existing author to clone from'];
     }
-    case 'verifyEmail': {
+    case 'verifyEmail':
+    case 'runEmail':
+    case 'guestEmail': {
       const p = emailProblems(s);
       return p.length ? [null, p.join('; ')] : [s.toLowerCase(), null];
     }
@@ -395,7 +399,7 @@ export const STEP_ACTIONS = {
   [S.funnel]: ['generate:funnel'],
   [S.grant]: ['generate:course360'],
   [S.goLive]: ['push'],
-  [S.e2e]: ['verify-email', 'verify'],
+  [S.e2e]: ['verify-email', 'verify', 'guest'],
 };
 
 /* ------------------------------------------------------------- generators --- */

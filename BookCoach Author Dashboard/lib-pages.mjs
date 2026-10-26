@@ -2,10 +2,10 @@
  * lib-pages.mjs — step 2: the coach page, built from a form instead of by hand.
  *
  * Every coach page is the SAME code (templates/coach-page.template.html — the
- * final code, identical in ms-v2 and freddy-v2 apart from their CONFIG block).
+ * final code, identical for every author apart from their CONFIG block).
  * Only the CONFIG block differs per author. So the dashboard asks for those
  * answers in a form, fills the block in, and writes the whole page next to the
- * others in `ghl-shopify subscription/` (ms-v2, freddy-v2, <slug>-v2 …),
+ * others in `All Coaches/` (1001-Michael-Stickler, 1002-Freddy-Davis …),
  * keeping a backup of any version it replaces.
  *
  * Answers that live in coaches.json (photo, initials, the author's own page,
@@ -18,7 +18,7 @@
  * Plan: ../ghl-shopify subscription/plans/22-pipeline-dashboard.md §17.
  */
 
-import { readFileSync, writeFileSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, copyFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { DASH, REPO_ROOT } from './lib-paths.mjs';
@@ -30,7 +30,7 @@ import { bearer } from '../coach-router/lib-config.mjs';
 import { STEP as S } from '../coach-router/steps.mjs';
 
 export const TEMPLATE = resolve(DASH, 'templates', 'coach-page.template.html');
-export const PAGES_DIR = resolve(REPO_ROOT, 'ghl-shopify subscription');
+export const PAGES_DIR = resolve(REPO_ROOT, 'All Coaches');
 export const PAGE_SETTINGS_FILE = resolve(DASH, 'page-settings.local.json');
 
 /** The empty CONFIG block a template carries. */
@@ -88,20 +88,25 @@ export function savePageSettings(code, settings, { file = PAGE_SETTINGS_FILE, no
 
 /* ---------------------------------------------------------- the file name --- */
 
+/** "michael-stickler" -> "Michael-Stickler" (the author part of a page file name). */
+const titleSlug = (slug) => slug.split('-').filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join('-');
+
 /**
- * Where this author's page lives. An author who already has a page file (ms-v2
- * for Stickler, freddy-v2 for Freddy — found by the COACH_CODE inside it, the
- * current or a former one) keeps it; a new author gets `<slug>-v2`.
+ * Where this author's page lives: `All Coaches/<code>-<Author-Name>`, e.g.
+ * 1001-Michael-Stickler. An author who already has a page file keeps it (found
+ * by the COACH_CODE inside it, the current or a former one); a new author gets
+ * the name above. A backup (`.bak-…`) is never mistaken for a page.
  */
 export function pageFileFor(coach, { dir = PAGES_DIR } = {}) {
   const codes = new Set([String(coach.code), ...((coach.formerCodes || []).map(String))]);
   if (existsSync(dir)) {
-    for (const name of readdirSync(dir).filter((n) => /-v2$/.test(n)).sort()) {
+    for (const name of readdirSync(dir).filter((n) => !/\.bak-/.test(n)).sort()) {
+      if (!statSync(resolve(dir, name)).isFile()) continue;
       const m = /COACH_CODE:\s*"(\d+)"/.exec(readFileSync(resolve(dir, name), 'utf8'));
       if (m && codes.has(m[1])) return { name, path: resolve(dir, name), exists: true };
     }
   }
-  const name = `${slugOf(coach) || coach.code}-v2`;
+  const name = `${coach.code}-${titleSlug(slugOf(coach) || 'coach')}`;
   const path = resolve(dir, name);
   return { name, path, exists: existsSync(path) };
 }
@@ -245,6 +250,7 @@ export function buildPage(coach, settings = {}, { shared = {}, secrets = [], tem
     backup = `${file.name}.bak-${stampOf(now)}`;
     copyFileSync(file.path, resolve(dir, backup));
   }
+  mkdirSync(dir, { recursive: true });
   writeFileSync(file.path, page, 'utf8');
   return { name: file.name, folder: dir, bytes: Buffer.byteLength(page), backup, includesKey: !!vfKey, builtAt: now.toISOString() };
 }

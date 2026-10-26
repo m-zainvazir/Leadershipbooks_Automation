@@ -42,7 +42,9 @@ const valOf = (f) => {
 };
 
 const WRITE = has('--write');
-const KEEP = has('--keep');
+// --guest is a GIFT, not a test: one real person, their exact address, a normal free trial, contact kept.
+const GUEST = has('--guest');
+const KEEP = has('--keep') || GUEST;
 // A real $0 Shopify order instead of a direct POST: exercises Flow B too.
 const SHOP = has('--shopify-order');
 const FLOW_SOURCE = 'shopify_flow_manual';
@@ -91,6 +93,8 @@ const problems = [...coachProblems(coach), ...emailProblems(baseEmail)];
 for (const [k, v] of [['workerUrl', workerUrl], ['flowSharedSecret', shared.flowSharedSecret], ['ghlApiToken', shared.ghlApiToken], ['ghlLocationId', shared.ghlLocationId]]) {
   if (!v) problems.push(`coaches.json shared.${k} is required`);
 }
+if (GUEST && !SHOP) problems.push('--guest needs --shopify-order (the gift goes through the real order path)');
+if (GUEST && !valOf('--email')) problems.push('--guest needs --email: the person who gets the access');
 if (SHOP) {
   const sc = shopifyConfig(shared);
   if (sc.missing.length) problems.push(`--shopify-order needs ${sc.missing.join(', ')} in coaches.json (plans/21 §D)`);
@@ -103,7 +107,7 @@ if (problems.length) {
 }
 
 const now = new Date();
-const email = testEmail(baseEmail, coach.code, now);
+const email = GUEST ? String(baseEmail).trim().toLowerCase() : testEmail(baseEmail, coach.code, now);
 const payload = orderPayload({ coach, email, now });
 
 /* -------------------------------------------------------------- clients ------ */
@@ -161,7 +165,7 @@ const kvDelete = (key) => {
 
 /* ------------------------------------------------------------------- plan ---- */
 
-console.log(`\nverify-author — coach ${coach.code} ${coach.displayName || coach.name}${WRITE ? '' : '   (DRY RUN — nothing sent)'}\n`);
+console.log(`\n${GUEST ? 'GIVE FREE ACCESS' : 'verify-author'} — coach ${coach.code} ${coach.displayName || coach.name}${WRITE ? '' : '   (DRY RUN — nothing sent)'}\n`);
 if (SHOP) {
   console.log(`  path            a REAL $0 Shopify order (100% discount), tagged ${DELIVERED_TAG} -> Flow B -> Worker -> GHL`);
   console.log(`  order           variant ${coach.shopifyVariantId} on ${shared.shopifyShop} — CANCELLED afterwards, always`);
@@ -170,7 +174,7 @@ if (SHOP) {
   console.log(`  order           ${payload.order_id}   product ${coach.shopifyProductId}`);
 }
 console.log(`  test address    ${email}`);
-console.log(`  afterwards      ${KEEP ? 'KEEP the contact (--keep): it stays tagged and ENTITLED until you delete it' : 'delete the contact and its trial:/shop: KV records'}`);
+console.log(`  afterwards      ${GUEST ? 'the person KEEPS the normal free trial — the contact stays, nothing is deleted' : KEEP ? 'KEEP the contact (--keep): it stays tagged and ENTITLED until you delete it' : 'delete the contact and its trial:/shop: KV records'}`);
 console.log(`\n  ⚠ This sends the real welcome email to ${email}${coach.courseLessonUrl ? ' and, if the grant workflow is live, a Course360 invite' : ''}.`);
 
 if (!WRITE) {
@@ -182,7 +186,15 @@ if (!WRITE) {
 
 // The contact this run deletes must be one this run created. Checked before
 // sending, so a clash costs nothing.
-if (await findByEmail(email)) die(`${email} already exists in GHL — refusing, because this tool deletes the contact it verifies.`);
+if (GUEST) {
+  const ex = await findByEmail(email);
+  if (ex) {
+    const full = (await ghl(`/contacts/${encodeURIComponent(ex.id)}`)).contact || ex;
+    if ((full.tags || []).map((x) => String(x).toLowerCase()).includes(String(coach.ghlTag).toLowerCase())) die(`${email} already holds ${coach.ghlTag} — they already have this coach. Nothing was sent.`);
+    if (kvGet(`trial:${ex.id}:${coach.code}`)) die(`${email} already had a trial of this coach. Nothing was sent: the Worker never gives a second trial.`);
+    console.log(`  ${email} is already a contact — the trial is added to it.`);
+  }
+} else if (await findByEmail(email)) die(`${email} already exists in GHL — refusing, because this tool deletes the contact it verifies.`);
 
 const rows = [];
 let endpointOk = false;
@@ -299,9 +311,10 @@ const failed = rows.filter((r) => r.status === 'FAIL').length;
 const warned = rows.filter((r) => r.status === 'WARN').length;
 console.log(`\n${formatTable(rows)}\n`);
 console.log(`  ${failed ? `FAILED — ${failed} check(s)` : 'PASSED'}${warned ? `, ${warned} warning(s) (registry values not filled in yet)` : ''}`);
-console.log(`\n  Emails went to ${email}: the welcome email should name ${coach.displayName || coach.name} and link to their lesson.`);
+if (GUEST) console.log(`\n  ${email} now has the coach. The welcome email is on its way to them.`);
+else console.log(`\n  Emails went to ${email}: the welcome email should name ${coach.displayName || coach.name} and link to their lesson.`);
 if (contact && !KEEP) console.log('  The Course360 login link in those emails no longer works: its contact was deleted by cleanup. That is expected.');
 console.log(`\n  ${SHOP ? LIMITS_NOTICE_ORDER : LIMITS_NOTICE}\n`);
 // Feeds the "Tested" column of `npm run author`. Local and gitignored.
-recordVerify(coach.code, { at: new Date().toISOString(), passed: !failed, warnings: warned, via: SHOP ? 'shopify-order' : 'endpoint' });
+if (!GUEST) recordVerify(coach.code, { at: new Date().toISOString(), passed: !failed, warnings: warned, via: SHOP ? 'shopify-order' : 'endpoint' });
 process.exit(failed ? 1 : 0);
